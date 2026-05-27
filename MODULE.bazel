@@ -20,8 +20,13 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 # generate the runpod API client from the vendored spec.
 bazel_dep(name = "rules_openapi", version = "0.2.0")
 
+# rules_shell — needed at module-load time for the `bazel run`
+# wrapper (`sh_binary` in runpod/defs.bzl). Promoted from
+# dev_dependency in v0.0.2 when the macro started emitting a
+# `.run` sibling.
+bazel_dep(name = "rules_shell", version = "0.6.1")
+
 # Dev-only.
-bazel_dep(name = "rules_shell", version = "0.6.1", dev_dependency = True)
 bazel_dep(name = "stardoc", version = "0.7.2", dev_dependency = True)
 
 # ─── Rust toolchain ────────────────────────────────────────────────
