@@ -5,6 +5,19 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.2 — `runpod_job` auto-emits `<name>.run` sh_binary
+
+The `runpod_job` macro now emits a sibling `<name>.run` sh_binary
+alongside the typed jobspec target. Downstream consumers can:
+
+    bazel run //path:my_job.run [-- <extra args forwarded to CLI>]
+
+…to trigger the actual RunPod training run from the build-time
+manifest binding. The wrapper reads `manifest_path` out of the
+emitted `<name>.jobspec.json` (via python3) and invokes
+`runpod-cli train --manifest <manifest>` from
+`$BUILD_WORKSPACE_DIRECTORY` so relative manifest paths resolve.
+
 ## 0.0.1 — initial lift + public macros
 
 Rust workspace lifted verbatim from
