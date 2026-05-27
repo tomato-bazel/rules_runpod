@@ -1,0 +1,18 @@
+# Smoke manifest exercising the rules_runpod macros end-to-end.
+# `bazel build //examples/smoke:smoke_job` produces a self-contained
+# JSON spec; no actual pod is provisioned.
+
+name = "rules-runpod-smoke"
+workdir = "."
+outputs = ["out"]
+
+setup = """
+set -euo pipefail
+echo "smoke setup: provisioning would happen here"
+"""
+
+run = """
+set -euo pipefail
+echo "smoke run: training would happen here"
+mkdir -p out && echo "ok" > out/result.txt
+"""

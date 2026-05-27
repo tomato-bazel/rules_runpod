@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Generic ratatui app shell. No RunPod knowledge — depends only on
+# crossterm + ratatui + tokio + anyhow + async-trait. Consumers
+# (e.g. //tools/runpod-cli/tui) supply their own client type as the
+# `C` parameter on `View<C>` / `App<C>`.
+rust_library(
+    name = "tui-kit",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:crossterm",
+        "@crates//:ratatui",
+        "@crates//:tokio",
+    ],
+    proc_macro_deps = ["@crates//:async-trait"],
+)

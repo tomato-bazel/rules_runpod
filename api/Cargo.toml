@@ -1,0 +1,26 @@
+[package]
+name = "runpod"
+description = "Typed RunPod REST client + thin auth/wait/SSH-endpoint wrapper."
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+
+# Generated client + its runtime crates. The generated crate is not on
+# crates.io; Bazel injects it via the rust_library target in this
+# directory's BUILD.bazel. Cargo only sees the placeholder; building
+# under plain cargo (without Bazel) won't link until those targets are
+# present. Bazel is the source of truth.
+progenitor-client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regress.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+bytes.workspace = true

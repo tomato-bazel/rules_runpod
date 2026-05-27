@@ -1,3 +1,54 @@
+load("@rules_openapi//rust:defs.bzl", "openapi_rust_client")
+load("@rules_python//python:defs.bzl", "py_binary")
+
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["MODULE.bazel"])
+# Refresh the vendored spec with:
+#     curl -sL https://rest.runpod.io/v1/openapi.json -o runpod-openapi.json
+# The genrule below patches it (deduping operationIds, fixing schema
+# bugs, stripping formats that pull in chrono/uuid) before feeding
+# the codegen.
+
+exports_files([
+    "MODULE.bazel",
+    "INTERNAL.md",
+    "runpod-openapi.json",
+])
+
+py_binary(
+    name = "patch_spec",
+    srcs = ["patch_spec.py"],
+)
+
+genrule(
+    name = "runpod_openapi_patched",
+    srcs = ["runpod-openapi.json"],
+    outs = ["runpod-openapi.patched.json"],
+    cmd = "$(execpath :patch_spec) $(execpath runpod-openapi.json) $@",
+    tools = [":patch_spec"],
+)
+
+# OpenAPI → typed Rust client. Consumed by //api:runpod as the
+# generated codegen target. Downstream consumers use the wrapper
+# at //api:runpod which re-exports types and adds bearer auth.
+openapi_rust_client(
+    name = "runpod_api",
+    spec = ":runpod_openapi_patched",
+    progenitor_client = "@crates//:progenitor-client",
+    reqwest = "@crates//:reqwest",
+    serde = "@crates//:serde",
+    serde_json = "@crates//:serde_json",
+    regress = "@crates//:regress",
+)
+
+# Convenience aliases so consumers can `bazel run @rules_runpod//:cli`
+# / `:tui` without spelling out the subpackages.
+alias(
+    name = "cli",
+    actual = "//cli:runpod-cli",
+)
+
+alias(
+    name = "tui",
+    actual = "//tui:runpod-tui",
+)

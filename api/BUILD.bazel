@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Wraps the progenitor-generated `runpod_api` crate with bearer-token
+# auth and a small project-facing surface (Client, Pod, SshEndpoint,
+# DeployRequest). Re-exports the generated types so callers can
+# reach `runpod::types::PodCreateInput` without depending on the
+# generated target directly.
+rust_library(
+    name = "runpod",
+    srcs = ["src/lib.rs"],
+    edition = "2021",
+    deps = [
+        "//:runpod_api",
+        "@crates//:anyhow",
+        "@crates//:reqwest",
+        "@crates//:tokio",
+    ],
+)

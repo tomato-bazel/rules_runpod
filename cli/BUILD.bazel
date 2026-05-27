@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "runpod-cli",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "//api:runpod",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:ctrlc",
+        "@crates//:directories",
+        "@crates//:dotenvy",
+        "@crates//:reqwest",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+        "@crates//:toml",
+    ],
+)

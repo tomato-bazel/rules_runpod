@@ -1,0 +1,22 @@
+[package]
+name = "runpod-tui"
+description = "Multi-pane terminal UI for managing RunPod resources."
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "runpod-tui"
+path = "src/main.rs"
+
+[dependencies]
+runpod = { path = "../api" }
+tui-kit = { path = "../tui-kit" }
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+serde.workspace = true
+tokio.workspace = true
+dotenvy.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+directories.workspace = true

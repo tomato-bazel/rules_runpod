@@ -1,0 +1,15 @@
+[package]
+name = "tui-kit"
+description = "Generic multi-pane ratatui app shell — `View<C>` trait, event loop, reusable widgets. Client-agnostic; pair it with any HTTP client to build a CRUD-style TUI."
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+tokio.workspace = true

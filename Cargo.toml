@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["api", "cli", "tui", "tui-kit"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+reqwest = { version = "0.13", features = ["json"] }
+dotenvy = "0.15"
+directories = "5.0"
+ctrlc = "3.4"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+bytes = "1"
+futures = "0.3"
+regress = "0.10"
+progenitor-client = "0.14"
+ratatui = "0.29"
+crossterm = "0.28"
+async-trait = "0.1"

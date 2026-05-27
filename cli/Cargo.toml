@@ -1,0 +1,21 @@
+[package]
+name = "runpod-cli"
+description = "CLI for RunPod GPU pods + the prime-transformer training flow."
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "runpod-cli"
+path = "src/main.rs"
+
+[dependencies]
+runpod = { path = "../api" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+dotenvy.workspace = true
+directories.workspace = true
+ctrlc.workspace = true
