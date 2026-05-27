@@ -56,13 +56,18 @@ def runpod_job(
     sh_binary(
         name = name + ".run",
         srcs = ["@rules_runpod//runpod:runner.sh"],
+        # Bundle the manifest itself so the runner gets an absolute
+        # runfiles path to the TOML — works for both source-tree and
+        # bazel-bin manifests (e.g. synthesized by lora_train).
         data = [
             ":" + name,
+            manifest,
             "@rules_runpod//:cli",
         ],
         args = [
             "$(execpath @rules_runpod//:cli)",
             "$(execpath :" + name + ")",
+            "$(execpath %s)" % manifest,
         ],
         visibility = visibility,
     )

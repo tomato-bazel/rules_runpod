@@ -5,6 +5,27 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.3 — `<name>.run` wrapper accepts a bazel-bin manifest path
+
+Fixes a class of failure that surfaced when `rules_lora` 0.0.4
+started synthesizing the manifest TOML at build time: the
+generated TOML landed in `bazel-bin/...`, but the v0.0.2 `runner.sh`
+read `manifest_path` out of the jobspec JSON and tried to resolve
+it against `$BUILD_WORKSPACE_DIRECTORY` (the source tree), where
+nothing existed.
+
+The runpod_job macro now bundles the manifest itself as a runfile
+of the emitted `<name>.run` sh_binary and passes its `$(execpath
+...)` as a third positional arg. runner.sh resolves all three
+positional args (cli, jobspec, manifest) to absolute paths via
+`realpath` *before* cd-ing to the workspace, so the manifest stays
+reachable whether it's a source file or a bazel-bin artifact.
+
+Bonus drive-by: config.rs now reports the resolved config-file
+path in the "RUNPOD_API_KEY not set" error message (the v0.0.2
+message named the Linux-XDG path even on macOS where the actual
+file lives under `~/Library/Application Support/`).
+
 ## 0.0.2 — `runpod_job` auto-emits `<name>.run` sh_binary
 
 The `runpod_job` macro now emits a sibling `<name>.run` sh_binary
