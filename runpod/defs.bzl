@@ -65,9 +65,11 @@ def runpod_job(
             "@rules_runpod//:cli",
         ],
         args = [
-            "$(execpath @rules_runpod//:cli)",
-            "$(execpath :" + name + ")",
-            "$(execpath %s)" % manifest,
+            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath :" + name + ")",
+            "$(rlocationpath %s)" % manifest,
         ],
+        # rules_bash runfiles helper used by runner.sh's `rlocation`.
+        deps = ["@bazel_tools//tools/bash/runfiles"],
         visibility = visibility,
     )

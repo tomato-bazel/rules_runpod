@@ -5,6 +5,22 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.4 — `<name>.run` wrapper uses Bazel's runfiles helper
+
+Fixes a regression in 0.0.3: passing `$(execpath ...)` as sh_binary
+args produced `bazel-out/...` paths that didn't resolve from the
+sh_binary's runfiles CWD. The runner.sh wrapper now initializes
+Bazel's standard bash runfiles helper (the
+`@bazel_tools//tools/bash/runfiles` library) and the macro passes
+`$(rlocationpath ...)` — the canonical runfiles-resolvable path —
+for each artifact. `rlocation $1` returns the absolute on-disk
+path inside the runfiles tree, which `realpath`-equivalent
+processing happily accepts.
+
+End-to-end smoke: `bazel run //training:parser_jobspec_runpod_job.run`
+in the `agora` repo now successfully invokes
+`runpod-cli train --manifest <bazel-bin manifest path>`.
+
 ## 0.0.3 — `<name>.run` wrapper accepts a bazel-bin manifest path
 
 Fixes a class of failure that surfaced when `rules_lora` 0.0.4
