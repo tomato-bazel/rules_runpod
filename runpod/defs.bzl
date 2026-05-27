@@ -33,6 +33,7 @@ def runpod_job(
         env = None,
         secrets = None,
         max_minutes = 0,
+        ephemeral = False,
         visibility = None):
     """Declare a one-shot RunPod training job.
 
@@ -42,6 +43,22 @@ def runpod_job(
                        `runpod-cli train <manifest>` against the
                        active workspace. Forwards extra args
                        (`bazel run :<name>.run -- --debug`).
+
+    Args:
+      name: target name.
+      manifest: label to a `runpod_manifest` target.
+      pod_type: GPU type string (e.g., `NVIDIA A100 80GB PCIe`).
+      image: container image.
+      env: extra env vars (dict).
+      secrets: env var names to forward from the local shell.
+      max_minutes: ceiling on the train run (0 = no cap).
+      ephemeral: when True, the `.run` wrapper passes both
+        `--down-on-success` and `--down-on-failure` to runpod-cli,
+        so the pod is torn down regardless of whether the run
+        succeeded — orphan-free iteration. Default False keeps
+        the legacy debug-friendly behavior (pod stays running on
+        failure so the operator can SSH in).
+      visibility: standard.
     """
     _runpod_job_rule(
         name = name,
@@ -53,6 +70,9 @@ def runpod_job(
         max_minutes = max_minutes,
         visibility = visibility,
     )
+    extra_args = []
+    if ephemeral:
+        extra_args = ["--down-on-success", "--down-on-failure"]
     sh_binary(
         name = name + ".run",
         srcs = ["@rules_runpod//runpod:runner.sh"],
@@ -68,7 +88,7 @@ def runpod_job(
             "$(rlocationpath @rules_runpod//:cli)",
             "$(rlocationpath :" + name + ")",
             "$(rlocationpath %s)" % manifest,
-        ],
+        ] + extra_args,
         # rules_bash runfiles helper used by runner.sh's `rlocation`.
         deps = ["@bazel_tools//tools/bash/runfiles"],
         visibility = visibility,

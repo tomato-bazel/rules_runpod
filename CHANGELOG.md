@@ -5,6 +5,23 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.5 — `runpod_job(ephemeral = True)` for orphan-free iteration
+
+`runpod-cli train` gains a `--down-on-failure` flag (mate of the
+existing `--down-on-success`). When training's setup or run script
+exits non-zero, the pod is torn down + state cleared automatically.
+
+The `runpod_job` macro accepts `ephemeral = True` which threads
+both `--down-on-success` and `--down-on-failure` through the
+`.run` wrapper. Recommended for `bazel run` iteration where leaving
+orphan pods up costs real money — during the rules_lora pod-side
+debug pass, we accumulated 6+ orphan pods that each had to be
+manually deleted.
+
+The pod-output pull happens *before* the failure-terminate so
+partial checkpoints (e.g. torchtune adapters saved before a
+post-train hook errors) still come back locally.
+
 ## 0.0.4 — `<name>.run` wrapper uses Bazel's runfiles helper
 
 Fixes a regression in 0.0.3: passing `$(execpath ...)` as sh_binary

@@ -36,6 +36,12 @@ pub struct TrainArgs {
     #[arg(long)]
     pub down_on_success: bool,
 
+    /// Terminate the pod automatically when setup/run exits non-zero.
+    /// Pair with `--down-on-success` for fully-ephemeral one-shot
+    /// training jobs that don't leave orphan pods on iteration.
+    #[arg(long)]
+    pub down_on_failure: bool,
+
     /// Re-use an existing pod recorded in .runpod/state.toml instead of
     /// provisioning a fresh one.
     #[arg(long)]
@@ -125,9 +131,21 @@ pub async fn cmd_train(
     })?;
 
     ssh::rsync_up(&endpoint, &manifest.workdir, "/root/workdir/", &manifest.skip_patterns)?;
-    ssh::run_remote_script_env(&endpoint, "setup", &manifest.setup, &manifest.envs)?;
-    ssh::run_remote_script_env(&endpoint, "run", &manifest.run, &manifest.envs)?;
 
+    // Capture failures so we can still pull partial outputs + tear
+    // down the pod under `--down-on-failure`. Without this, a non-zero
+    // exit from setup/run propagates immediately and orphans the pod.
+    let mut script_result: Result<()> = Ok(());
+    script_result = script_result
+        .and_then(|_| ssh::run_remote_script_env(&endpoint, "setup", &manifest.setup, &manifest.envs));
+    if script_result.is_ok() {
+        script_result =
+            ssh::run_remote_script_env(&endpoint, "run", &manifest.run, &manifest.envs);
+    }
+
+    // Pull any outputs that did get produced, even on failure —
+    // checkpointers often write partial state to outputs/ before
+    // the recipe errors.
     if !args.no_pull {
         for path in &manifest.outputs {
             let remote = format!("/root/workdir/{path}");
@@ -136,8 +154,19 @@ pub async fn cmd_train(
         }
     }
 
-    if args.down_on_success {
-        eprintln!("[runpod-cli] training succeeded — terminating pod {}", pod.id);
+    let succeeded = script_result.is_ok();
+    let should_terminate = (succeeded && args.down_on_success)
+        || (!succeeded && args.down_on_failure);
+
+    if should_terminate {
+        if succeeded {
+            eprintln!("[runpod-cli] training succeeded — terminating pod {}", pod.id);
+        } else {
+            eprintln!(
+                "[runpod-cli] training failed — terminating pod {} (--down-on-failure)",
+                pod.id
+            );
+        }
         client.terminate_pod(&pod.id).await?;
         State::clear()?;
     } else {
@@ -146,7 +175,8 @@ pub async fn cmd_train(
             pod.id
         );
     }
-    Ok(())
+
+    script_result
 }
 
 pub async fn cmd_ssh(config: &Config) -> Result<()> {
