@@ -1,5 +1,12 @@
-//! User-level config: API key + ssh key path. Read once from
-//! ~/.config/runpod-cli/config.toml or from RUNPOD_API_KEY env var.
+//! User-level config: API key + ssh key path.
+//!
+//! Loaded from (in order of preference):
+//!   1. `RUNPOD_API_KEY` env var.
+//!   2. The `directories::ProjectDirs` config file for `runpod-cli`,
+//!      which resolves to:
+//!        * macOS:   `~/Library/Application Support/runpod-cli/config.toml`
+//!        * Linux:   `~/.config/runpod-cli/config.toml`
+//!        * Windows: `%APPDATA%\runpod-cli\config.toml`
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -33,9 +40,12 @@ impl Config {
         let api_key = std::env::var("RUNPOD_API_KEY")
             .ok()
             .or(file_cfg.api_key)
-            .context(
-                "RUNPOD_API_KEY not set in env, .env, or ~/.config/runpod-cli/config.toml",
-            )?;
+            .with_context(|| {
+                format!(
+                    "RUNPOD_API_KEY not set in env, .env, or the config file (expected at {})",
+                    file.display(),
+                )
+            })?;
         Ok(Self { api_key, file_ssh_key_path: file_cfg.ssh_key_path })
     }
 
