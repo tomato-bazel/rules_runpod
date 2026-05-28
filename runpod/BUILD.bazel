@@ -4,4 +4,5 @@ exports_files([
     "defs.bzl",
     "runner.sh",
     "deploy_endpoint.sh",
+    "create_template.sh",
 ])

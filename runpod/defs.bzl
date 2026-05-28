@@ -46,22 +46,13 @@ def runpod_template(name, visibility = None, **kwargs):
     _runpod_template_rule(name = name, visibility = visibility, **kwargs)
     sh_binary(
         name = name + ".create",
-        srcs = ["@rules_runpod//runpod:runner.sh"],
+        srcs = ["@rules_runpod//runpod:create_template.sh"],
         data = [
             ":" + name,
             "@rules_runpod//:cli",
         ],
         args = [
             "$(rlocationpath @rules_runpod//:cli)",
-            "$(rlocationpath :" + name + ")",
-            # runner.sh's contract is (cli, jobspec, manifest); we
-            # piggyback its rlocation discipline by passing the
-            # template spec twice — once via SPEC_PATH (which we
-            # don't consume) and once as MANIFEST_PATH (which is
-            # what we actually feed to `template create-from-spec`).
-            # Cleaner alternative: a dedicated create_template.sh
-            # runner — deferred until the trio of
-            # template/endpoint/destroy runners is finalised.
             "$(rlocationpath :" + name + ")",
         ],
         deps = ["@bazel_tools//tools/bash/runfiles"],
