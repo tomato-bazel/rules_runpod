@@ -32,3 +32,24 @@ RunpodPodInfo = provider(
         "ports": "list[int] — exposed TCP ports for ssh tunnels.",
     },
 )
+
+RunpodTemplateInfo = provider(
+    doc = "A RunPod template spec — image + env + ports + disk.",
+    fields = {
+        "spec_json": "File — the rendered TemplateCreateInput JSON.",
+        "name": "str — template display name (also the consumer's reference).",
+        "image": "str — container image reference.",
+        "is_serverless": "bool — true if this template is serverless-only.",
+    },
+)
+
+RunpodServerlessEndpointInfo = provider(
+    doc = "A serverless endpoint spec — references a template.",
+    fields = {
+        "spec_json": "File — the rendered EndpointCreateInput JSON (template_id slot left empty; resolved at deploy time).",
+        "name": "str — endpoint display name.",
+        "template": "RunpodTemplateInfo of the template this endpoint serves.",
+        "min_workers": "int — minimum warm workers.",
+        "max_workers": "int — maximum concurrent workers.",
+    },
+)

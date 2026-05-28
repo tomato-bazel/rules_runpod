@@ -20,10 +20,106 @@ load(
     _runpod_job_rule = "runpod_job",
     _runpod_manifest = "runpod_manifest",
     _runpod_pod = "runpod_pod",
+    _runpod_serverless_endpoint_rule = "runpod_serverless_endpoint",
+    _runpod_template_rule = "runpod_template",
 )
 
 runpod_manifest = _runpod_manifest
 runpod_pod = _runpod_pod
+runpod_template = _runpod_template_rule
+runpod_serverless_endpoint = _runpod_serverless_endpoint_rule
+
+def runpod_inference_endpoint(
+        name,
+        model,
+        gpu_type_ids,
+        image = "vllm/vllm-openai:latest",
+        max_model_len = 32768,
+        min_workers = 0,
+        max_workers = 3,
+        idle_timeout_seconds = 5,
+        data_center_ids = None,
+        scaler_type = "QUEUE_DELAY",
+        scaler_value = 4,
+        env = None,
+        container_disk_gb = 50,
+        readme = "",
+        flashboot = False,
+        visibility = None):
+    """Convenience macro: declare a vLLM-served LLM as a serverless endpoint.
+
+    Composes a `runpod_template` (image + model env + the
+    OpenAI-compatible port) with a `runpod_serverless_endpoint`
+    pointing at it. Produces three Bazel targets:
+
+      `<name>_template`     — the typed template spec.
+      `<name>`              — the typed endpoint spec.
+      `<name>.deploy_spec`  — alias of the endpoint spec for
+                              clarity in downstream `bazel build`s.
+
+    Sized for the common case: vLLM image, OpenAI-compatible
+    server on port 8000, a HuggingFace model id passed in via
+    the `MODEL_NAME` env, `--max-model-len` from `max_model_len`.
+    Override `image` / `env` for non-vLLM substrates (tgi,
+    llama.cpp).
+
+    Args:
+      name: target name (also the endpoint display name).
+      model: HuggingFace model id (e.g.
+        'Qwen/Qwen2.5-Coder-32B-Instruct'). Passed to vLLM as
+        `MODEL_NAME`.
+      gpu_type_ids: preferred GPU type ids in order.
+      image: container image. Defaults to the latest vLLM
+        OpenAI-compatible server.
+      max_model_len: vLLM `--max-model-len` setting.
+      min_workers / max_workers / idle_timeout_seconds:
+        autoscaling knobs (see `runpod_serverless_endpoint`).
+      data_center_ids: list of data centers to allow.
+      scaler_type / scaler_value: scaling policy.
+      env: extra env vars to merge in beyond MODEL_NAME +
+        MAX_MODEL_LEN.
+      container_disk_gb: disk per worker.
+      readme: README content for the template.
+      flashboot: enable RunPod's flashboot feature.
+      visibility: standard.
+    """
+    merged_env = {
+        "MODEL_NAME": model,
+        "MAX_MODEL_LEN": str(max_model_len),
+    }
+    for k, v in (env or {}).items():
+        merged_env[k] = v
+
+    _runpod_template_rule(
+        name = name + "_template",
+        template_name = name + "-template",
+        image = image,
+        container_disk_gb = container_disk_gb,
+        env = merged_env,
+        ports = ["8000/http"],
+        is_serverless = True,
+        readme = readme,
+        visibility = visibility,
+    )
+    _runpod_serverless_endpoint_rule(
+        name = name,
+        template = ":" + name + "_template",
+        endpoint_name = name,
+        gpu_type_ids = gpu_type_ids,
+        data_center_ids = data_center_ids or [],
+        min_workers = min_workers,
+        max_workers = max_workers,
+        idle_timeout_seconds = idle_timeout_seconds,
+        scaler_type = scaler_type,
+        scaler_value = scaler_value,
+        flashboot = flashboot,
+        visibility = visibility,
+    )
+    native.alias(
+        name = name + ".deploy_spec",
+        actual = ":" + name,
+        visibility = visibility,
+    )
 
 def runpod_job(
         name,

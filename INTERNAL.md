@@ -32,7 +32,9 @@ pods. Three things in one repo:
 
 ```starlark
 load("@rules_runpod//runpod:defs.bzl",
-     "runpod_manifest", "runpod_job", "runpod_pod")
+     "runpod_manifest", "runpod_job", "runpod_pod",
+     "runpod_template", "runpod_serverless_endpoint",
+     "runpod_inference_endpoint")
 
 # Declare a manifest as a Bazel target — typed, blake3-pinned.
 runpod_manifest(
@@ -62,7 +64,50 @@ runpod_pod(
     ports = [50063],
     secrets = ["HF_TOKEN"],
 )
+
+# Reusable image+config bundle. Register once with
+# `runpod template create-from-spec` (or via .create when
+# the runner sh_binary lands), reference from many pods
+# or serverless endpoints.
+runpod_template(
+    name = "vllm_qwen",
+    image = "vllm/vllm-openai:latest",
+    env = {"MODEL_NAME": "Qwen/Qwen2.5-Coder-32B-Instruct"},
+    ports = ["8000/http"],
+    is_serverless = True,
+)
+
+# Serverless endpoint — pay-per-request, autoscaling. References
+# a template; tags GPU + scaling + idle settings.
+runpod_serverless_endpoint(
+    name = "qwen_coder",
+    template = ":vllm_qwen",
+    gpu_type_ids = ["NVIDIA A100 80GB PCIe"],
+    min_workers = 0,
+    max_workers = 3,
+    idle_timeout_seconds = 30,
+)
+
+# Convenience macro: vLLM-served LLM in one declaration.
+# Produces a `<name>_template` + `<name>` (endpoint spec).
+runpod_inference_endpoint(
+    name = "qwen_coder",
+    model = "Qwen/Qwen2.5-Coder-32B-Instruct",
+    gpu_type_ids = ["NVIDIA A100 80GB PCIe"],
+    max_model_len = 32768,
+)
 ```
+
+CLI surface for the same shape (operator path):
+
+    runpod template create --name foo --image vllm/vllm-openai:latest \\
+                            --env MODEL_NAME=Qwen/... --port 8000/http --serverless
+    runpod template create-from-spec path/to/template.json
+    runpod endpoint create --name foo --template-id <id> \\
+                             --gpu 'NVIDIA A100 80GB PCIe' --min-workers 0 \\
+                             --max-workers 3 --idle-timeout-seconds 30
+    runpod endpoint create-from-spec path/to/endpoint.json
+    runpod endpoint list / get <id> / update <id> ... / delete <id>
 
 ## Layout
 

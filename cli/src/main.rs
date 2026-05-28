@@ -21,6 +21,7 @@
 
 mod cli;
 mod config;
+mod endpoint;
 mod manifest;
 mod pod;
 mod ssh;

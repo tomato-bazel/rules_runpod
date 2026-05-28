@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::config::Config;
-use crate::{pod, template, train, volume};
+use crate::{endpoint, pod, template, train, volume};
 
 #[derive(Parser, Debug)]
 #[command(name = "runpod-cli", about = "Manage RunPod GPU pods and training runs.")]
@@ -48,6 +48,11 @@ pub enum Command {
     /// Network volume operations (list / get / delete).
     #[command(subcommand)]
     Volume(volume::Command),
+    /// Serverless endpoint operations (list / get / create / update / delete).
+    /// Serverless endpoints are pay-per-request, autoscaling containers
+    /// (e.g. for hosting vLLM-served LLMs with an OpenAI-compatible API).
+    #[command(subcommand)]
+    Endpoint(endpoint::Command),
 }
 
 pub async fn run(cli: Cli) -> Result<()> {
@@ -65,5 +70,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Pod(c) => pod::dispatch(&client, c).await,
         Command::Template(c) => template::dispatch(&client, c).await,
         Command::Volume(c) => volume::dispatch(&client, c).await,
+        Command::Endpoint(c) => endpoint::dispatch(&client, c).await,
     }
 }

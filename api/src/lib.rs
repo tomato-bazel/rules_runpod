@@ -203,6 +203,72 @@ impl Client {
     }
 
     // ---------------------------------------------------------------------
+    // Serverless endpoints
+    // ---------------------------------------------------------------------
+    //
+    // A "Serverless endpoint" on RunPod is a pay-per-request,
+    // autoscaling container service. Workers spin up on demand, run
+    // a request, and scale down when idle. The five methods below
+    // cover lifecycle: create, list, get, update (scaling, image,
+    // env), delete.
+    //
+    // Common use case downstream: host a vLLM or
+    // text-generation-inference server with an OpenAI-compatible
+    // HTTP surface at `<endpoint_url>/openai/v1/chat/completions`,
+    // then point an LLM client at it.
+
+    pub async fn list_endpoints(&self) -> Result<Vec<types::Endpoint>> {
+        let resp = self
+            .inner
+            .list_endpoints(None, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("list_endpoints: {e}"))?;
+        Ok(resp.into_inner().0)
+    }
+
+    pub async fn get_endpoint(&self, id: &str) -> Result<types::Endpoint> {
+        let resp = self
+            .inner
+            .get_endpoint(id, None, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("get_endpoint {id}: {e}"))?;
+        Ok(resp.into_inner())
+    }
+
+    pub async fn create_endpoint(
+        &self,
+        body: &types::EndpointCreateInput,
+    ) -> Result<types::Endpoint> {
+        let resp = self
+            .inner
+            .create_endpoint(body)
+            .await
+            .map_err(|e| anyhow::anyhow!("create_endpoint: {e}"))?;
+        Ok(resp.into_inner())
+    }
+
+    pub async fn update_endpoint(
+        &self,
+        id: &str,
+        body: &types::EndpointUpdateInput,
+    ) -> Result<types::Endpoint> {
+        let resp = self
+            .inner
+            .update_endpoint(id, body)
+            .await
+            .map_err(|e| anyhow::anyhow!("update_endpoint {id}: {e}"))?;
+        Ok(resp.into_inner())
+    }
+
+    pub async fn delete_endpoint(&self, id: &str) -> Result<()> {
+        self.inner
+            .delete_endpoint(id)
+            .await
+            .map_err(|e| anyhow::anyhow!("delete_endpoint {id}: {e}"))?;
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------
     // Project-shaped pod ops (used by the train flow)
     // ---------------------------------------------------------------------
 
