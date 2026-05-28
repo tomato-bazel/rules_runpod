@@ -76,11 +76,35 @@ print(tid)
 ")"
 echo "  → template id: $TEMPLATE_ID" >&2
 
+# Resolve a Bazel-declared network volume (referenced by name) to
+# its id. The volume must already exist (`bazel run :<vol>.create`).
+# If the spec carries no networkVolumeName, this is a no-op.
+VOLUME_ID=""
+VOLUME_NAME="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('networkVolumeName','') or '')" "$ENDPOINT_SPEC")"
+if [[ -n "$VOLUME_NAME" ]]; then
+    echo "===> resolving network volume by name: $VOLUME_NAME" >&2
+    VOLUME_ID="$("$CLI_PATH" volume list 2>/dev/null | python3 -c "
+import sys
+name = sys.argv[1]
+for line in sys.stdin:
+    parts = line.split()
+    # table rows: ID NAME SIZE DATA_CENTER ; match the NAME column.
+    if len(parts) >= 2 and parts[1] == name:
+        print(parts[0]); break
+" "$VOLUME_NAME")"
+    if [[ -z "$VOLUME_ID" ]]; then
+        echo "fatal: network volume named '$VOLUME_NAME' not found." >&2
+        echo "       Create it first: bazel run //path:<volume_target>.create" >&2
+        exit 4
+    fi
+    echo "  → volume id: $VOLUME_ID" >&2
+fi
+
 PATCHED_SPEC="$(mktemp -t runpod-endpoint-spec.XXXXXX.json)"
 trap 'rm -f "$PATCHED_SPEC"' EXIT
-python3 - "$ENDPOINT_SPEC" "$TEMPLATE_ID" >"$PATCHED_SPEC" <<'PYEOF'
+python3 - "$ENDPOINT_SPEC" "$TEMPLATE_ID" "$VOLUME_ID" >"$PATCHED_SPEC" <<'PYEOF'
 import json, sys
-spec_path, template_id = sys.argv[1], sys.argv[2]
+spec_path, template_id, volume_id = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(spec_path) as f:
     spec = json.load(f)
 if spec.get("templateId") not in (None, "", "<resolved-at-deploy-time>"):
@@ -90,6 +114,14 @@ if spec.get("templateId") not in (None, "", "<resolved-at-deploy-time>"):
         file=sys.stderr,
     )
 spec["templateId"] = template_id
+# Resolve volume: explicit networkVolumeName lookup wins; else keep
+# any pre-set networkVolumeId. Strip the non-API helper field.
+if volume_id:
+    spec["networkVolumeId"] = volume_id
+spec.pop("networkVolumeName", None)
+# Drop empty networkVolumeId so we don't send "".
+if not spec.get("networkVolumeId"):
+    spec.pop("networkVolumeId", None)
 json.dump(spec, sys.stdout, indent=2)
 PYEOF
 

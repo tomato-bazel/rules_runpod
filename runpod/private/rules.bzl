@@ -10,6 +10,7 @@ spec; execute-time is the `runpod-cli` consuming the spec.
 load(":providers.bzl",
      "RunpodJobInfo",
      "RunpodManifestInfo",
+     "RunpodNetworkVolumeInfo",
      "RunpodPodInfo",
      "RunpodServerlessEndpointInfo",
      "RunpodTemplateInfo")
@@ -112,6 +113,69 @@ runpod_job = rule(
         "max_minutes": attr.int(
             default = 0,
             doc = "Wall-clock budget. 0 = no limit.",
+        ),
+    },
+)
+
+# ============================================================
+# runpod_network_volume — declare a persistent network volume.
+# ============================================================
+#
+# Volumes are named, persistent storage that outlive pods +
+# serverless workers. The killer use case for serverless LLM
+# hosting: cache the model weights on the volume so a cold worker
+# mounts the model (seconds) instead of re-downloading tens of GB
+# (minutes) on every spin-up.
+#
+# Emits a `NetworkVolumeCreateInput`-shaped JSON spec. The macro
+# layer adds a `<name>.create` runner. Volumes are created once
+# and referenced by many endpoints/pods (by name → id resolution
+# at deploy time), so creation is decoupled from endpoint deploy.
+def _runpod_network_volume_impl(ctx):
+    spec = ctx.actions.declare_file(ctx.label.name + ".volume.json")
+    volume_name = ctx.attr.volume_name or ctx.label.name
+    spec_dict = {
+        "name": volume_name,
+        "size": ctx.attr.size_gb,
+        "dataCenterId": ctx.attr.data_center_id,
+    }
+    ctx.actions.write(
+        output = spec,
+        content = json.encode_indent(spec_dict),
+    )
+    return [
+        DefaultInfo(files = depset([spec])),
+        RunpodNetworkVolumeInfo(
+            spec_json = spec,
+            volume_name = volume_name,
+            size_gb = ctx.attr.size_gb,
+            data_center_id = ctx.attr.data_center_id,
+            mount_path = ctx.attr.mount_path,
+        ),
+    ]
+
+runpod_network_volume = rule(
+    implementation = _runpod_network_volume_impl,
+    attrs = {
+        "size_gb": attr.int(
+            mandatory = True,
+            doc = "Volume size in GB. Size it for the model(s) you'll cache " +
+                  "(e.g. 100 for a 14B+ model cache with room to spare).",
+        ),
+        "data_center_id": attr.string(
+            mandatory = True,
+            doc = "RunPod data center id (e.g. 'US-CA-2', 'EU-RO-1'). " +
+                  "Endpoints/pods referencing this volume MUST run in the " +
+                  "same data center.",
+        ),
+        "volume_name": attr.string(
+            default = "",
+            doc = "Display name + deploy-time lookup key. Defaults to the target name.",
+        ),
+        "mount_path": attr.string(
+            default = "/runpod-volume",
+            doc = "Informational. Serverless mounts volumes at /runpod-volume; " +
+                  "pods mount at the configured path.",
         ),
     },
 )
@@ -265,13 +329,35 @@ def _runpod_serverless_endpoint_impl(ctx):
                 ctx.label.name, str(ctx.attr.template.label)
             ) + "must have is_serverless = True",
         )
+
+    # A volume can be referenced two ways:
+    #   * network_volume (label) — Bazel-declared volume; the
+    #     deploy runner resolves its NAME → id at deploy time
+    #     (the volume must be created first via :<vol>.create).
+    #   * network_volume_id (string) — a pre-existing volume id.
+    # The label form wins if both are set. The deploy runner reads
+    # `networkVolumeName` from the spec and resolves it; if only
+    # `networkVolumeId` is present it's used verbatim.
+    network_volume_name = ""
+    if ctx.attr.network_volume:
+        vol_info = ctx.attr.network_volume[RunpodNetworkVolumeInfo]
+        network_volume_name = vol_info.volume_name
+        # The endpoint MUST run in the volume's data center; if the
+        # author left data_center_ids empty, pin it to the volume's.
+        if not ctx.attr.data_center_ids:
+            data_center_ids = [vol_info.data_center_id]
+        else:
+            data_center_ids = ctx.attr.data_center_ids
+    else:
+        data_center_ids = ctx.attr.data_center_ids
+
     spec_dict = {
         "name": ctx.attr.endpoint_name or ctx.label.name,
         # templateId is filled in by `.deploy` after the template
         # is created and its id is known.
         "templateId": "<resolved-at-deploy-time>",
         "gpuTypeIds": ctx.attr.gpu_type_ids,
-        "dataCenterIds": ctx.attr.data_center_ids,
+        "dataCenterIds": data_center_ids,
         "computeType": ctx.attr.compute_type,
         "workersMin": ctx.attr.min_workers,
         "workersMax": ctx.attr.max_workers,
@@ -283,6 +369,10 @@ def _runpod_serverless_endpoint_impl(ctx):
         "executionTimeoutMs": ctx.attr.execution_timeout_ms,
         "flashboot": ctx.attr.flashboot,
         "networkVolumeId": ctx.attr.network_volume_id,
+        # Non-API field consumed by deploy_endpoint.sh to resolve a
+        # Bazel-declared volume's id by name. Stripped before the
+        # spec is POSTed.
+        "networkVolumeName": network_volume_name,
     }
     ctx.actions.write(
         output = spec,
@@ -349,9 +439,18 @@ runpod_serverless_endpoint = rule(
             doc = "Max ms per individual request (0 = provider default).",
         ),
         "flashboot": attr.bool(default = False),
+        "network_volume": attr.label(
+            providers = [RunpodNetworkVolumeInfo],
+            doc = "Optional `runpod_network_volume` target. The deploy " +
+                  "runner resolves its name → id (the volume must be " +
+                  "created first via :<vol>.create). When set and " +
+                  "data_center_ids is empty, the endpoint is pinned to " +
+                  "the volume's data center (they must match).",
+        ),
         "network_volume_id": attr.string(
             default = "",
-            doc = "Optional network volume id to attach.",
+            doc = "Optional pre-existing network volume id (alternative " +
+                  "to `network_volume`). Used verbatim.",
         ),
     },
 )

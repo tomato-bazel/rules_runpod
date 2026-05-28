@@ -19,6 +19,7 @@ load(
     "//runpod/private:rules.bzl",
     _runpod_job_rule = "runpod_job",
     _runpod_manifest = "runpod_manifest",
+    _runpod_network_volume_rule = "runpod_network_volume",
     _runpod_pod = "runpod_pod",
     _runpod_serverless_endpoint_rule = "runpod_serverless_endpoint",
     _runpod_template_rule = "runpod_template",
@@ -26,6 +27,44 @@ load(
 
 runpod_manifest = _runpod_manifest
 runpod_pod = _runpod_pod
+
+def runpod_network_volume(name, visibility = None, **kwargs):
+    """Declare a persistent network volume (model cache / dataset store).
+
+    Emits two targets:
+      * `<name>`         — the typed NetworkVolumeCreateInput JSON spec.
+      * `<name>.create`  — sh_binary that creates (or reuses) the
+                           volume via `runpod volume create-from-spec`
+                           and prints its id.
+
+    Volumes are created once and referenced by many endpoints/pods.
+    Reference one from a `runpod_serverless_endpoint` /
+    `runpod_inference_endpoint` via its `network_volume` attr — the
+    deploy runner resolves the volume's name → id (so a serverless
+    vLLM worker mounts the cached model instead of re-downloading it
+    on every cold start).
+
+    Args:
+      name: target name (also the volume's display name + lookup key).
+      visibility: standard.
+      **kwargs: forwarded to the rule — `size_gb` (required),
+        `data_center_id` (required), `volume_name`, `mount_path`.
+    """
+    _runpod_network_volume_rule(name = name, visibility = visibility, **kwargs)
+    sh_binary(
+        name = name + ".create",
+        srcs = ["@rules_runpod//runpod:create_volume.sh"],
+        data = [
+            ":" + name,
+            "@rules_runpod//:cli",
+        ],
+        args = [
+            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath :" + name + ")",
+        ],
+        deps = ["@bazel_tools//tools/bash/runfiles"],
+        visibility = visibility,
+    )
 
 def runpod_template(name, visibility = None, **kwargs):
     """Declare a reusable template (image+env+ports+disk).
@@ -106,7 +145,12 @@ def runpod_inference_endpoint(
         name,
         model,
         gpu_type_ids,
-        image = "vllm/vllm-openai:latest",
+        # RunPod SERVERLESS requires the worker image (implements the
+        # queue handler + OpenAI-compatible routing), NOT the raw
+        # `vllm/vllm-openai` server (that's for pods). The version
+        # matters: `stable` is vLLM v1.x and crashes on newer model
+        # architectures (e.g. Qwen2.5) — pin a recent v2.x.
+        image = "runpod/worker-v1-vllm:v2.7.0stable-cuda12.1.0",
         max_model_len = 32768,
         min_workers = 0,
         max_workers = 3,
@@ -118,6 +162,8 @@ def runpod_inference_endpoint(
         container_disk_gb = 50,
         readme = "",
         flashboot = False,
+        network_volume = None,
+        hf_cache_path = "/runpod-volume/huggingface",
         visibility = None):
     """Convenience macro: declare a vLLM-served LLM as a serverless endpoint.
 
@@ -154,12 +200,28 @@ def runpod_inference_endpoint(
       container_disk_gb: disk per worker.
       readme: README content for the template.
       flashboot: enable RunPod's flashboot feature.
+      network_volume: optional `runpod_network_volume` target. When
+        set, the model is cached on the volume (HF_HOME pointed at
+        `hf_cache_path`), so cold workers mount the weights instead
+        of re-downloading them — the fix for serverless LLM cold-start
+        cost. The endpoint is pinned to the volume's data center.
+        Create the volume first: `bazel run :<vol>.create`.
+      hf_cache_path: where on the mounted volume HuggingFace caches
+        models. Default `/runpod-volume/huggingface` (RunPod mounts
+        serverless volumes at /runpod-volume). Only used when
+        network_volume is set.
       visibility: standard.
     """
     merged_env = {
         "MODEL_NAME": model,
         "MAX_MODEL_LEN": str(max_model_len),
     }
+
+    # When a model-cache volume is attached, point HuggingFace's
+    # cache onto it so the weights persist across cold workers.
+    if network_volume:
+        merged_env["HF_HOME"] = hf_cache_path
+
     for k, v in (env or {}).items():
         merged_env[k] = v
 
@@ -188,6 +250,7 @@ def runpod_inference_endpoint(
         scaler_type = scaler_type,
         scaler_value = scaler_value,
         flashboot = flashboot,
+        network_volume = network_volume,
         visibility = visibility,
     )
     # The endpoint macro's `<name>.deploy` IS the entry point — that

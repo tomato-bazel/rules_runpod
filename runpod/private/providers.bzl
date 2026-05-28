@@ -43,6 +43,17 @@ RunpodTemplateInfo = provider(
     },
 )
 
+RunpodNetworkVolumeInfo = provider(
+    doc = "A network volume spec — persistent storage referenced by pods/endpoints.",
+    fields = {
+        "spec_json": "File — the rendered NetworkVolumeCreateInput JSON.",
+        "volume_name": "str — volume display name (the deploy-time lookup key).",
+        "size_gb": "int — allocated size in GB.",
+        "data_center_id": "str — RunPod data center the volume lives in.",
+        "mount_path": "str — where consumers mount it (informational; serverless mounts at /runpod-volume).",
+    },
+)
+
 RunpodServerlessEndpointInfo = provider(
     doc = "A serverless endpoint spec — references a template.",
     fields = {

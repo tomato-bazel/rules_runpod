@@ -1,16 +1,32 @@
 load(
     "//runpod:defs.bzl",
     "runpod_inference_endpoint",
+    "runpod_network_volume",
     "runpod_serverless_endpoint",
     "runpod_template",
 )
 
 package(default_visibility = ["//visibility:public"])
 
+# A model-cache volume. Create it ONCE (`bazel run :model_cache.create`);
+# the first worker downloads the model onto it, every subsequent cold
+# worker mounts the cached weights instead of re-downloading. This is
+# the fix for serverless-LLM cold-start cost.
+#
+# NOTE: the endpoint that references this MUST run in the same data
+# center (the macro pins it automatically).
+runpod_network_volume(
+    name = "model_cache",
+    size_gb = 100,
+    data_center_id = "US-CA-2",
+)
+
 # A) The convenience form: one macro, vLLM-served LLM ready for an
 #    OpenAI-compatible client (polyglot-pair-miner, llm_translate,
 #    or any other consumer). Sized for Qwen 2.5 Coder 32B on a
-#    single A100 80GB worker.
+#    single A100 80GB worker, with the model cached on the volume
+#    so cold starts mount the weights (~seconds) instead of
+#    re-downloading (~minutes).
 runpod_inference_endpoint(
     name = "qwen_coder_32b",
     model = "Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -19,6 +35,7 @@ runpod_inference_endpoint(
     min_workers = 0,
     max_workers = 2,
     idle_timeout_seconds = 30,
+    network_volume = ":model_cache",
     readme = "Qwen 2.5 Coder 32B served via vLLM, OpenAI-compatible at /openai/v1/chat/completions",
 )
 
@@ -28,7 +45,7 @@ runpod_inference_endpoint(
 #    min_workers=1 sharing the same image+env).
 runpod_template(
     name = "llama_3_70b_template",
-    image = "vllm/vllm-openai:latest",
+    image = "runpod/worker-v1-vllm:v2.7.0stable-cuda12.1.0",
     template_name = "llama-3-70b-template",
     container_disk_gb = 200,
     env = {

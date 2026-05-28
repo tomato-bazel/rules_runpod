@@ -1,8 +1,12 @@
-//! Network volume subcommands. Volumes persist across pod restarts —
-//! useful for storing the prime-shards dataset + checkpoints across
-//! training runs without rebuilding them each time.
+//! Network volume subcommands. Volumes persist across pod restarts
+//! and across serverless workers — useful for caching large model
+//! weights (so a serverless vLLM worker mounts the model instead of
+//! re-downloading tens of GB on every cold start) and for storing
+//! datasets + checkpoints across training runs.
 
-use anyhow::Result;
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
@@ -13,6 +17,12 @@ pub enum Command {
     Get { id: String },
     /// Create a new network volume.
     Create(CreateArgs),
+    /// Create from a JSON file (NetworkVolumeCreateInput shape).
+    /// Used by the Bazel `runpod_network_volume` rule's `.create`
+    /// runner. If a volume with the same name already exists in the
+    /// same data center, prints that volume's id instead of creating
+    /// a duplicate (idempotent create — safe to re-run).
+    CreateFromSpec { path: PathBuf },
     /// Delete a volume (irreversible — data is wiped).
     Delete { id: String },
 }
@@ -47,12 +57,39 @@ pub async fn dispatch(client: &runpod::Client, cmd: Command) -> Result<()> {
             println!("created {}", v.id.unwrap_or_default());
             Ok(())
         }
+        Command::CreateFromSpec { path } => create_from_spec(client, &path).await,
         Command::Delete { id } => {
             client.delete_network_volume(&id).await?;
             println!("deleted {id}");
             Ok(())
         }
     }
+}
+
+async fn create_from_spec(client: &runpod::Client, path: &std::path::Path) -> Result<()> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read volume spec from {path:?}"))?;
+    let body: runpod::types::NetworkVolumeCreateInput = serde_json::from_str(&text)
+        .with_context(|| format!("parse {path:?} as NetworkVolumeCreateInput"))?;
+    // Idempotence: if a same-name volume already exists in the same
+    // data center, reuse it. Volumes are persistent, named resources
+    // meant to be created once and referenced by many endpoints/pods.
+    let existing = client.list_network_volumes().await?;
+    if let Some(v) = existing.iter().find(|v| {
+        v.name.as_deref() == Some(body.name.as_str())
+            && v.data_center_id.as_deref() == Some(body.data_center_id.as_str())
+    }) {
+        let id = v.id.clone().unwrap_or_default();
+        eprintln!(
+            "volume {:?} already exists in {} — reusing",
+            body.name, body.data_center_id
+        );
+        println!("{id}");
+        return Ok(());
+    }
+    let v = client.create_network_volume(&body).await?;
+    println!("{}", v.id.unwrap_or_default());
+    Ok(())
 }
 
 async fn list(client: &runpod::Client) -> Result<()> {

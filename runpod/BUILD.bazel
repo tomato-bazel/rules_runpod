@@ -5,4 +5,5 @@ exports_files([
     "runner.sh",
     "deploy_endpoint.sh",
     "create_template.sh",
+    "create_volume.sh",
 ])
