@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -19,4 +19,9 @@ rust_binary(
         "@crates//:tokio",
         "@crates//:toml",
     ],
+)
+
+rust_test(
+    name = "runpod_cli_test",
+    crate = ":runpod-cli",
 )

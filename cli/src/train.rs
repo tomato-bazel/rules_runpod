@@ -20,9 +20,11 @@ pub struct TrainArgs {
     #[arg(short = 'f', long, default_value = "runpod.toml")]
     pub manifest: PathBuf,
 
-    /// Override the GPU type. Defaults to the manifest's value.
+    /// Override the GPU type(s). Repeatable (`--gpu A --gpu B`) to set
+    /// an ordered fallback list; tried in turn, advancing past capacity
+    /// errors. Empty = use the manifest's `gpu_type`.
     #[arg(long)]
-    pub gpu: Option<String>,
+    pub gpu: Vec<String>,
 
     /// Override the pod name shown in the RunPod console.
     #[arg(long)]
@@ -76,31 +78,19 @@ pub async fn cmd_train(
         eprintln!("[runpod-cli] reusing pod {pod_id}");
         client.get_pod(&pod_id).await?
     } else {
-        let req = runpod::DeployRequest {
-            gpu_type: args.gpu.unwrap_or(manifest.resources.gpu_type.clone()),
-            gpu_count: 1,
-            container_disk_gb: manifest.resources.container_disk_gb,
-            volume_gb: manifest.resources.volume_gb,
-            image: manifest.resources.image.clone(),
-            ports: "22/tcp,8080/http".into(),
-            name: args.name.unwrap_or_else(|| manifest.name.clone()),
-            public_key: pub_key,
-            cloud_type: manifest.resources.cloud_type.clone(),
-            env: manifest.envs.clone(),
-            network_volume_id: manifest.resources.network_volume_id.clone(),
-            data_center_id: manifest.resources.data_center_id.clone(),
+        // Candidate GPU types, in priority order: the `--gpu` override
+        // (if any) wins, otherwise the manifest's `gpu_type` list. We
+        // try each until one provisions, advancing past capacity errors.
+        let candidates: Vec<String> = if !args.gpu.is_empty() {
+            args.gpu.clone()
+        } else {
+            manifest.resources.gpu_type.clone()
         };
-        eprintln!(
-            "[runpod-cli] deploying {} on {} ({})",
-            req.name, req.gpu_type, req.cloud_type
-        );
-        let pod = client.deploy_on_demand(&req).await?;
-        eprintln!("[runpod-cli] pod {} created — waiting for SSH", pod.id);
-        let ready = client
-            .wait_for_ssh(&pod.id, manifest.resources.wait_timeout_secs)
-            .await?;
-        State::save(&State { pod_id: Some(ready.id.clone()) })?;
-        ready
+        if candidates.is_empty() {
+            bail!("no GPU type specified (manifest `gpu_type` empty and no --gpu)");
+        }
+        let name = args.name.unwrap_or_else(|| manifest.name.clone());
+        deploy_with_fallback(client, &manifest, &candidates, &name, pub_key).await?
     };
 
     let endpoint = pod
@@ -199,6 +189,75 @@ pub async fn cmd_train(
     }
 
     script_result
+}
+
+/// True if the deploy error is a RunPod capacity shortage (the API
+/// returns HTTP 500 with `"no instances currently available"`), as
+/// opposed to a hard misconfiguration (bad GPU id, auth, quota). Only
+/// capacity errors are retried against the next candidate.
+fn is_capacity_error(err: &anyhow::Error) -> bool {
+    let m = err.to_string().to_lowercase();
+    m.contains("no instances currently available") || m.contains("no instances available")
+}
+
+/// Provision a pod, trying each GPU candidate in order. Advances to the
+/// next on a capacity error; surfaces any other error immediately; and
+/// once a pod is created, waits for SSH and records it. Bails if every
+/// candidate is out of capacity.
+async fn deploy_with_fallback(
+    client: &runpod::Client,
+    manifest: &Manifest,
+    candidates: &[String],
+    name: &str,
+    pub_key: String,
+) -> Result<runpod::Pod> {
+    let n = candidates.len();
+    for (i, gpu) in candidates.iter().enumerate() {
+        let req = runpod::DeployRequest {
+            gpu_type: gpu.clone(),
+            gpu_count: 1,
+            container_disk_gb: manifest.resources.container_disk_gb,
+            volume_gb: manifest.resources.volume_gb,
+            image: manifest.resources.image.clone(),
+            ports: "22/tcp,8080/http".into(),
+            name: name.to_string(),
+            public_key: pub_key.clone(),
+            cloud_type: manifest.resources.cloud_type.clone(),
+            env: manifest.envs.clone(),
+            network_volume_id: manifest.resources.network_volume_id.clone(),
+            data_center_id: manifest.resources.data_center_id.clone(),
+        };
+        eprintln!(
+            "[runpod-cli] deploying {} on {} ({}) [{}/{}]",
+            req.name, req.gpu_type, req.cloud_type, i + 1, n
+        );
+        match client.deploy_on_demand(&req).await {
+            Ok(pod) => {
+                eprintln!("[runpod-cli] pod {} created — waiting for SSH", pod.id);
+                let ready = client
+                    .wait_for_ssh(&pod.id, manifest.resources.wait_timeout_secs)
+                    .await?;
+                State::save(&State { pod_id: Some(ready.id.clone()) })?;
+                return Ok(ready);
+            }
+            Err(e) => {
+                if is_capacity_error(&e) && i + 1 < n {
+                    eprintln!(
+                        "[runpod-cli] {gpu}: no capacity — falling back to next GPU type"
+                    );
+                    continue;
+                }
+                if is_capacity_error(&e) {
+                    return Err(e).with_context(|| {
+                        format!("all {n} GPU type(s) out of capacity: {candidates:?}")
+                    });
+                }
+                return Err(e).with_context(|| format!("deploying on {gpu}"));
+            }
+        }
+    }
+    // Unreachable: the loop returns or errors on the last candidate.
+    bail!("no GPU candidates attempted")
 }
 
 pub async fn cmd_ssh(config: &Config) -> Result<()> {

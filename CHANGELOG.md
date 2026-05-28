@@ -5,6 +5,19 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.7 — GPU fallback list + repeatable --gpu override
+
+- **`train` retries across an ordered GPU fallback list.** The manifest's
+  `[resources] gpu_type` now accepts either a single string (backward
+  compatible) or a list (`gpu_type = ["NVIDIA L40S", "NVIDIA A40", ...]`).
+  `train` tries each in turn, advancing to the next only on a *capacity*
+  error ("no instances currently available") and surfacing any other
+  error (bad GPU id, auth) immediately. Bails with a clear message when
+  every candidate is out of capacity — no more hand-editing the GPU and
+  relaunching when SECURE capacity is dry.
+- **`--gpu` is now repeatable** (`--gpu A --gpu B`) — a runtime override
+  of the candidate list, no manifest edit required.
+
 ## 0.0.6 — Detached run execution (survives SSH drops)
 
 The `run` script can now execute detached on the pod

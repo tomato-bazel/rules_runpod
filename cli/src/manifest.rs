@@ -28,7 +28,7 @@
 //!     """
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -71,7 +71,13 @@ fn default_poll_secs() -> u64 { 30 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Resources {
-    pub gpu_type: String,
+    /// GPU type(s) to provision. Accepts either a single string
+    /// (`gpu_type = "NVIDIA A40"`) or an ordered fallback list
+    /// (`gpu_type = ["NVIDIA L40S", "NVIDIA A40"]`); `train` tries each
+    /// in turn, advancing past capacity ("no instances available")
+    /// errors. Always normalized to a `Vec` here.
+    #[serde(deserialize_with = "string_or_vec")]
+    pub gpu_type: Vec<String>,
     #[serde(default = "default_container_disk")]
     pub container_disk_gb: u32,
     #[serde(default = "default_volume")]
@@ -92,6 +98,25 @@ pub struct Resources {
     pub data_center_id: Option<String>,
 }
 
+/// Accept a single string or a sequence of strings for `gpu_type`,
+/// normalizing both to `Vec<String>` (backward compatible with the
+/// historical single-string manifests).
+fn string_or_vec<'de, D>(d: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match StringOrVec::deserialize(d)? {
+        StringOrVec::One(s) => vec![s],
+        StringOrVec::Many(v) => v,
+    })
+}
+
 fn default_workdir() -> PathBuf { PathBuf::from(".") }
 fn default_container_disk() -> u32 { 50 }
 fn default_volume() -> u32 { 200 }
@@ -104,5 +129,32 @@ impl Manifest {
             .with_context(|| format!("reading {}", path.display()))?;
         let m: Manifest = toml::from_str(&text).context("parsing manifest")?;
         Ok(m)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(resources_gpu: &str) -> Manifest {
+        let text = format!(
+            "name = \"x\"\nsetup = \"\"\nrun = \"\"\n[resources]\n{resources_gpu}\nimage = \"img\"\n"
+        );
+        toml::from_str(&text).expect("manifest should parse")
+    }
+
+    #[test]
+    fn gpu_type_accepts_single_string() {
+        let m = parse("gpu_type = \"NVIDIA A40\"");
+        assert_eq!(m.resources.gpu_type, vec!["NVIDIA A40".to_string()]);
+    }
+
+    #[test]
+    fn gpu_type_accepts_fallback_list() {
+        let m = parse("gpu_type = [\"NVIDIA L40S\", \"NVIDIA A40\"]");
+        assert_eq!(
+            m.resources.gpu_type,
+            vec!["NVIDIA L40S".to_string(), "NVIDIA A40".to_string()]
+        );
     }
 }
