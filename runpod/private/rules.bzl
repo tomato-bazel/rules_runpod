@@ -174,6 +174,14 @@ runpod_pod = rule(
 # `runpod_pod` / `runpod_serverless_endpoint` targets.
 def _runpod_template_impl(ctx):
     spec = ctx.actions.declare_file(ctx.label.name + ".template.json")
+
+    # Serverless templates can't attach a network volume — the
+    # RunPod REST API returns 500 if volumeInGb > 0 on a
+    # serverless template. Force it to 0 (empty mount path) when
+    # is_serverless; honor volume_gb / volume_path otherwise.
+    volume_gb = 0 if ctx.attr.is_serverless else ctx.attr.volume_gb
+    volume_path = "" if ctx.attr.is_serverless else ctx.attr.volume_path
+
     spec_dict = {
         "name": ctx.attr.template_name or ctx.label.name,
         "imageName": ctx.attr.image,
@@ -184,8 +192,8 @@ def _runpod_template_impl(ctx):
         "dockerStartCmd": ctx.attr.docker_start_cmd,
         "readme": ctx.attr.readme,
         "isPublic": False,
-        "volumeInGb": ctx.attr.volume_gb,
-        "volumeMountPath": ctx.attr.volume_path,
+        "volumeInGb": volume_gb,
+        "volumeMountPath": volume_path,
     }
     ctx.actions.write(
         output = spec,

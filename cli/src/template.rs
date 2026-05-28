@@ -57,6 +57,11 @@ pub struct CreateArgs {
     /// Override the image's start command.
     #[arg(long)]
     pub start_cmd: Option<String>,
+    /// Network volume size in GB. Forced to 0 when --serverless
+    /// (serverless templates can't attach a volume; a non-zero
+    /// value makes the API return 500).
+    #[arg(long, default_value_t = 0)]
+    pub volume_gb: u32,
 }
 
 pub async fn dispatch(client: &runpod::Client, cmd: Command) -> Result<()> {
@@ -92,7 +97,13 @@ async fn create(client: &runpod::Client, args: CreateArgs) -> Result<()> {
         .as_deref()
         .map(|s| s.split_whitespace().map(String::from).collect())
         .unwrap_or_default();
-    let spec = json!({
+    // Serverless templates cannot attach a network volume — the
+    // generated `TemplateCreateInput` defaults `volumeInGb` to 20,
+    // and sending volumeInGb>0 on a serverless template makes the
+    // REST API return 500. Force volumeInGb=0 (and an empty mount
+    // path) when serverless; honor --volume-gb otherwise.
+    let volume_gb = if args.serverless { 0 } else { args.volume_gb };
+    let mut spec = json!({
         "name": args.name,
         "imageName": args.image,
         "containerDiskInGb": args.container_disk_gb,
@@ -100,7 +111,13 @@ async fn create(client: &runpod::Client, args: CreateArgs) -> Result<()> {
         "ports": args.ports,
         "isServerless": args.serverless,
         "dockerStartCmd": docker_start_cmd,
+        "volumeInGb": volume_gb,
     });
+    if volume_gb == 0 {
+        // Empty mount path keeps the API from rejecting a
+        // zero-volume template that still names a mount point.
+        spec["volumeMountPath"] = json!("");
+    }
     let body: TemplateCreateInput = serde_json::from_value(spec)
         .context("build TemplateCreateInput from CLI args")?;
     let t = client.create_template(&body).await?;
