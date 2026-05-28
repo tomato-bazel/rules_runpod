@@ -26,8 +26,90 @@ load(
 
 runpod_manifest = _runpod_manifest
 runpod_pod = _runpod_pod
-runpod_template = _runpod_template_rule
-runpod_serverless_endpoint = _runpod_serverless_endpoint_rule
+
+def runpod_template(name, visibility = None, **kwargs):
+    """Declare a reusable template (image+env+ports+disk).
+
+    Emits two targets:
+      * `<name>`         — the typed TemplateCreateInput JSON spec.
+      * `<name>.create`  — sh_binary that POSTs the spec via
+                           `runpod template create-from-spec`.
+
+    Args:
+      name: target name.
+      visibility: standard.
+      **kwargs: forwarded to the `runpod_template` rule. See
+        `runpod/private/rules.bzl` for the full attribute list
+        (image, container_disk_gb, env, ports, is_serverless,
+        docker_start_cmd, readme, volume_gb, volume_path).
+    """
+    _runpod_template_rule(name = name, visibility = visibility, **kwargs)
+    sh_binary(
+        name = name + ".create",
+        srcs = ["@rules_runpod//runpod:runner.sh"],
+        data = [
+            ":" + name,
+            "@rules_runpod//:cli",
+        ],
+        args = [
+            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath :" + name + ")",
+            # runner.sh's contract is (cli, jobspec, manifest); we
+            # piggyback its rlocation discipline by passing the
+            # template spec twice — once via SPEC_PATH (which we
+            # don't consume) and once as MANIFEST_PATH (which is
+            # what we actually feed to `template create-from-spec`).
+            # Cleaner alternative: a dedicated create_template.sh
+            # runner — deferred until the trio of
+            # template/endpoint/destroy runners is finalised.
+            "$(rlocationpath :" + name + ")",
+        ],
+        deps = ["@bazel_tools//tools/bash/runfiles"],
+        visibility = visibility,
+    )
+
+def runpod_serverless_endpoint(name, template, visibility = None, **kwargs):
+    """Declare a serverless endpoint backed by a template.
+
+    Emits two targets:
+      * `<name>`         — the typed EndpointCreateInput JSON spec
+                           (with `templateId` placeholder).
+      * `<name>.deploy`  — sh_binary that, on `bazel run`:
+                             1. POSTs the template spec → captures id
+                             2. patches the endpoint spec
+                             3. POSTs the endpoint spec → prints result
+
+    Args:
+      name: target name.
+      template: label of a `runpod_template` target (must have
+        is_serverless=True).
+      visibility: standard.
+      **kwargs: forwarded to the `runpod_serverless_endpoint`
+        rule (gpu_type_ids, min_workers, max_workers,
+        idle_timeout_seconds, ...).
+    """
+    _runpod_serverless_endpoint_rule(
+        name = name,
+        template = template,
+        visibility = visibility,
+        **kwargs
+    )
+    sh_binary(
+        name = name + ".deploy",
+        srcs = ["@rules_runpod//runpod:deploy_endpoint.sh"],
+        data = [
+            template,
+            ":" + name,
+            "@rules_runpod//:cli",
+        ],
+        args = [
+            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath %s)" % template,
+            "$(rlocationpath :" + name + ")",
+        ],
+        deps = ["@bazel_tools//tools/bash/runfiles"],
+        visibility = visibility,
+    )
 
 def runpod_inference_endpoint(
         name,
@@ -90,7 +172,9 @@ def runpod_inference_endpoint(
     for k, v in (env or {}).items():
         merged_env[k] = v
 
-    _runpod_template_rule(
+    # Call the public macros so sub-targets pick up `.create` /
+    # `.deploy` sh_binary runners automatically.
+    runpod_template(
         name = name + "_template",
         template_name = name + "-template",
         image = image,
@@ -101,7 +185,7 @@ def runpod_inference_endpoint(
         readme = readme,
         visibility = visibility,
     )
-    _runpod_serverless_endpoint_rule(
+    runpod_serverless_endpoint(
         name = name,
         template = ":" + name + "_template",
         endpoint_name = name,
@@ -115,11 +199,12 @@ def runpod_inference_endpoint(
         flashboot = flashboot,
         visibility = visibility,
     )
-    native.alias(
-        name = name + ".deploy_spec",
-        actual = ":" + name,
-        visibility = visibility,
-    )
+    # The endpoint macro's `<name>.deploy` IS the entry point — that
+    # single `bazel run` provisions both the template and the
+    # endpoint. Expose it under the inference-endpoint's name too
+    # as a friendlier alias so consumers can `bazel run :foo.deploy`
+    # without remembering that the inference macro layers two
+    # underlying targets.
 
 def runpod_job(
         name,
