@@ -5,6 +5,32 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.6 — Detached run execution (survives SSH drops)
+
+The `run` script can now execute detached on the pod
+(`detached = true` in the manifest TOML). Instead of streaming
+the script over a single long-lived SSH session — which dies if
+the connection drops, taking the whole run with it — the script
+is written to `.agora_run.sh`, launched under `setsid`/`nohup`,
+and the CLI polls for an `.agora_run.exit` sentinel over fresh
+SSH connections.
+
+Motivation: three consecutive ~1-hour LoRA training runs (agora
+parser fine-tune) died to mid-run `Connection reset by peer` /
+`Broken pipe`. The training itself was healthy each time (loss
+converging) — the SSH session was the failure point. Detached
+execution decouples the run's lifetime from the controlling
+session: a dropped connection during the poll is logged + retried
+on the next tick; the run keeps going on the pod regardless.
+
+  * New `Manifest.detached` (default false, back-compat) +
+    `Manifest.poll_secs` (default 30).
+  * `ssh::run_remote_script_detached` + `ssh::poll_remote_until_done`.
+  * `setup` still runs foreground (short, cheap to retry); only
+    the long-pole `run` script goes detached.
+  * SSH keepalive hardened: ServerAliveInterval 30→15,
+    ServerAliveCountMax 8, TCPKeepAlive yes.
+
 ## 0.0.5 — `runpod_job(ephemeral = True)` for orphan-free iteration
 
 `runpod-cli train` gains a `--down-on-failure` flag (mate of the

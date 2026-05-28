@@ -136,11 +136,33 @@ pub async fn cmd_train(
     // down the pod under `--down-on-failure`. Without this, a non-zero
     // exit from setup/run propagates immediately and orphans the pod.
     let mut script_result: Result<()> = Ok(());
+    // Setup always runs in the foreground — it's short (pip install
+    // + model prefetch) and a drop there is cheap to retry. The
+    // `run` script is the long pole; in detached mode it survives
+    // SSH drops.
     script_result = script_result
         .and_then(|_| ssh::run_remote_script_env(&endpoint, "setup", &manifest.setup, &manifest.envs));
     if script_result.is_ok() {
-        script_result =
-            ssh::run_remote_script_env(&endpoint, "run", &manifest.run, &manifest.envs);
+        if manifest.detached {
+            // Launch detached, then poll for the exit sentinel. A
+            // dropped SSH connection during the poll is non-fatal —
+            // the next tick reconnects; the training keeps running
+            // on the pod regardless.
+            script_result = ssh::run_remote_script_detached(
+                &endpoint, "run", &manifest.run, &manifest.envs,
+            )
+            .and_then(|_| {
+                let code = ssh::poll_remote_until_done(&endpoint, manifest.poll_secs)?;
+                if code == 0 {
+                    Ok(())
+                } else {
+                    anyhow::bail!("detached `run` exited with code {code}")
+                }
+            });
+        } else {
+            script_result =
+                ssh::run_remote_script_env(&endpoint, "run", &manifest.run, &manifest.envs);
+        }
     }
 
     // Pull any outputs that did get produced, even on failure —

@@ -50,10 +50,24 @@ pub struct Manifest {
     /// the manifest (WANDB_API_KEY, HF_TOKEN, …).
     #[serde(default)]
     pub forward_envs: Vec<String>,
+    /// Run the `run` script detached (`nohup`/`setsid`) on the pod
+    /// and poll for completion, rather than streaming it over a
+    /// single long-lived SSH session. Strongly recommended for any
+    /// run longer than a few minutes: a dropped SSH connection no
+    /// longer kills the run or loses progress. Defaults to false
+    /// for backward compatibility; long jobs (training) set true.
+    #[serde(default)]
+    pub detached: bool,
+    /// Poll interval (seconds) for the detached run's completion
+    /// check. Ignored unless `detached`. Default 30.
+    #[serde(default = "default_poll_secs")]
+    pub poll_secs: u64,
 
     pub setup: String,
     pub run: String,
 }
+
+fn default_poll_secs() -> u64 { 30 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Resources {
