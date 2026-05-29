@@ -140,7 +140,18 @@ pub async fn cmd_train(
         });
     })?;
 
-    ssh::rsync_up(&endpoint, &manifest.workdir, "/root/workdir/", &manifest.skip_patterns)?;
+    // Volume mode (network volume + output_archive): the run is fully
+    // S3-backed — inputs were staged to the volume, the run reads/writes
+    // the mounted volume, and the result comes back via S3. No workdir
+    // rsync at all. The legacy rsync path remains only for volume-less
+    // jobs (until every consumer migrates to volumes).
+    let volume_mode =
+        manifest.resources.network_volume_id.is_some() && manifest.output_archive.is_some();
+    if !volume_mode {
+        ssh::rsync_up(&endpoint, &manifest.workdir, "/root/workdir/", &manifest.skip_patterns)?;
+    } else {
+        eprintln!("[runpod-cli] volume mode: skipping workdir rsync (inputs staged on the volume)");
+    }
 
     // Capture failures so we can still pull partial outputs + tear
     // down the pod under `--down-on-failure`. Without this, a non-zero
@@ -175,14 +186,45 @@ pub async fn cmd_train(
         }
     }
 
-    // Pull any outputs that did get produced, even on failure —
-    // checkpointers often write partial state to outputs/ before
-    // the recipe errors.
+    // Retrieve outputs. Volume mode: the run tarred its result to a
+    // single key on the volume — pull it via S3 (no SSH, no listing) and
+    // extract. Legacy mode: rsync the `outputs` paths back over SSH.
     if !args.no_pull {
-        for path in &manifest.outputs {
-            let remote = format!("/root/workdir/{path}");
-            eprintln!("[runpod-cli] pulling {remote} -> {path}");
-            let _ = ssh::rsync_down(&endpoint, &remote, &PathBuf::from(path));
+        if volume_mode {
+            if let (Some(vol), Some(arch)) =
+                (&manifest.resources.network_volume_id, &manifest.output_archive)
+            {
+                let local = PathBuf::from(&arch.local);
+                eprintln!("[runpod-cli] pulling s3://{vol}/{} -> {}", arch.key, arch.local);
+                match crate::volume::download(client, vol, &arch.key, &local).await {
+                    Ok(n) => {
+                        eprintln!("[runpod-cli] downloaded {:.1} MB; extracting", n as f64 / 1.0e6);
+                        if let Some(dir) = local.parent() {
+                            let status = std::process::Command::new("tar")
+                                .arg("xzf")
+                                .arg(&local)
+                                .arg("-C")
+                                .arg(if dir.as_os_str().is_empty() { std::path::Path::new(".") } else { dir })
+                                .status();
+                            match status {
+                                Ok(s) if s.success() => {
+                                    eprintln!("[runpod-cli] extracted {} → {:?}", arch.local, dir)
+                                }
+                                _ => eprintln!("[runpod-cli] WARN: extract of {} failed", arch.local),
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("[runpod-cli] WARN: output download failed: {e:#}"),
+                }
+            }
+        } else {
+            // Pull any outputs that did get produced, even on failure —
+            // checkpointers often write partial state before the recipe errors.
+            for path in &manifest.outputs {
+                let remote = format!("/root/workdir/{path}");
+                eprintln!("[runpod-cli] pulling {remote} -> {path}");
+                let _ = ssh::rsync_down(&endpoint, &remote, &PathBuf::from(path));
+            }
         }
     }
 

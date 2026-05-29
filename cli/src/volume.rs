@@ -148,6 +148,37 @@ async fn sync(client: &runpod::Client, args: SyncArgs) -> Result<()> {
     Ok(())
 }
 
+/// Download a single object (by exact key) from a volume to a local path
+/// via the S3 API. Single-key GET — no listing, since RunPod's S3 gateway
+/// rejects the SDK's list params. The train flow uses this to pull a
+/// tarred output archive out of the volume (the rsync-free result path).
+pub(crate) async fn download(
+    client: &runpod::Client,
+    volume_id: &str,
+    key: &str,
+    local: &Path,
+) -> Result<u64> {
+    let (s3, _) = s3_for_volume(client, volume_id).await?;
+    let resp = s3
+        .get_object()
+        .bucket(volume_id)
+        .key(key)
+        .send()
+        .await
+        .with_context(|| format!("downloading s3://{volume_id}/{key}"))?;
+    let data = resp
+        .body
+        .collect()
+        .await
+        .with_context(|| format!("reading body of {key}"))?
+        .into_bytes();
+    if let Some(parent) = local.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(local, &data).with_context(|| format!("writing {local:?}"))?;
+    Ok(data.len() as u64)
+}
+
 /// Upload a local file or directory to `volume_id` under `prefix` via the
 /// S3 API. Shared by the `volume sync` subcommand and the train flow's
 /// pre-deploy dataset staging. Returns the number of files uploaded.

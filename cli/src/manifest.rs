@@ -48,6 +48,13 @@ pub struct Manifest {
     /// `/workspace`), so a staged key `k` is readable at `/workspace/k`.
     #[serde(default)]
     pub stage: Vec<StageEntry>,
+    /// When set (volume mode), the run writes its result to the volume as
+    /// a single archive and `train` pulls it back via S3 instead of the
+    /// SSH `outputs` rsync — the rsync-free result path. Single-key GET
+    /// (RunPod's S3 list is unusable), so the run must tar its output dir
+    /// into exactly this key on the volume.
+    #[serde(default)]
+    pub output_archive: Option<OutputArchive>,
 
     pub resources: Resources,
     #[serde(default)]
@@ -82,6 +89,15 @@ pub struct StageEntry {
     /// Key prefix on the volume (e.g. `datasets/parser`).
     #[serde(default)]
     pub key: String,
+}
+
+/// A single output archive to pull off the volume via S3 after the run.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OutputArchive {
+    /// Exact object key on the volume (e.g. `outputs/adapter-x.tar.gz`).
+    pub key: String,
+    /// Local destination path for the downloaded archive.
+    pub local: String,
 }
 
 fn default_poll_secs() -> u64 { 30 }
