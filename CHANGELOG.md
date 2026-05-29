@@ -5,6 +5,16 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.10 — `volume create` accepts HTTP 201
+
+- **`volume create` no longer errors on a successful create.** RunPod's
+  `POST /networkvolumes` returns `201 Created` with the new volume in the
+  body, but the vendored OpenAPI spec only documented `200`, so the
+  generated (progenitor) client treated 201 as an `UnexpectedResponse` —
+  the volume *was* created, but the CLI errored before printing its id.
+  `patch_spec.py` now mirrors the `200` response under `201` for
+  `POST /networkvolumes`, so the client parses the created volume.
+
 ## 0.0.9 — Create the workdir in volume mode
 
 - **`mkdir -p /root/workdir` before setup/run in volume mode.** The rsync

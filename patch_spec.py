@@ -119,6 +119,26 @@ def _drop_mistyped_constants(obj: Any, path: str, drops: list[str]) -> None:
             _drop_mistyped_constants(v, f"{path}[{i}]", drops)
 
 
+def _add_created_responses(spec: dict, adds: list[str]) -> None:
+    """RunPod's `POST /networkvolumes` returns `201 Created` with the
+    new volume in the body, but the spec only documents `200`. progenitor
+    treats the undocumented 201 as an `UnexpectedResponse` error (the
+    volume *is* created, but the client errors before parsing it). Mirror
+    the 200 response under 201 so the generated client accepts it and
+    deserializes the NetworkVolume."""
+    for path, methods in spec.get("paths", {}).items():
+        post = methods.get("post") if isinstance(methods, dict) else None
+        if not isinstance(post, dict):
+            continue
+        responses = post.get("responses", {})
+        if "201" not in responses and "200" in responses:
+            # Only the create endpoints actually return 201; scope by
+            # presence of a 200 JSON body on a POST that creates a resource.
+            if path.rstrip("/").endswith("networkvolumes"):
+                responses["201"] = json.loads(json.dumps(responses["200"]))
+                adds.append(f"{path} POST: added 201 (mirrors 200)")
+
+
 _STRIP_FORMATS = {"date-time", "uuid", "ipv4"}
 
 
@@ -151,6 +171,8 @@ def main() -> int:
     _drop_mistyped_constants(spec, "$", example_drops)
     format_strips: list[str] = []
     _strip_typified_formats(spec, "$", format_strips)
+    created_adds: list[str] = []
+    _add_created_responses(spec, created_adds)
 
     with open(dst, "w") as f:
         json.dump(spec, f, indent=2)
@@ -163,6 +185,8 @@ def main() -> int:
         print(f"dropped mistyped value at {p}", file=sys.stderr)
     for p in format_strips:
         print(f"stripped typified format at {p}", file=sys.stderr)
+    for p in created_adds:
+        print(f"added created-response: {p}", file=sys.stderr)
     return 0
 
 

@@ -7,7 +7,7 @@ as first-class build targets.
 
 module(
     name = "rules_runpod",
-    version = "0.0.9",
+    version = "0.0.10",
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")
