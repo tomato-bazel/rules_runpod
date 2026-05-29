@@ -9,6 +9,8 @@ rust_binary(
     deps = [
         "//api:runpod",
         "@crates//:anyhow",
+        "@crates//:aws-config",
+        "@crates//:aws-sdk-s3",
         "@crates//:clap",
         "@crates//:ctrlc",
         "@crates//:directories",

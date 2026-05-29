@@ -4,9 +4,10 @@
 //! re-downloading tens of GB on every cold start) and for storing
 //! datasets + checkpoints across training runs.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use aws_sdk_s3::primitives::ByteStream;
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
@@ -15,6 +16,13 @@ pub enum Command {
     List,
     /// Show one volume as JSON.
     Get { id: String },
+    /// Upload a local file or directory to a volume via RunPod's
+    /// S3-compatible API — the fast data path that replaces
+    /// rsync-over-SSH for bulk training data / model weights. Needs
+    /// `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (RunPod S3 API
+    /// keys, distinct from `RUNPOD_API_KEY`) in the env; the S3
+    /// endpoint + region are derived from the volume's data center.
+    Sync(SyncArgs),
     /// Create a new network volume.
     Create(CreateArgs),
     /// Create from a JSON file (NetworkVolumeCreateInput shape).
@@ -39,6 +47,17 @@ pub struct CreateArgs {
     pub data_center: String,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct SyncArgs {
+    /// Local file or directory to upload.
+    pub local: PathBuf,
+    /// Target network volume id.
+    pub id: String,
+    /// Remote key prefix within the volume (e.g. `datasets/parser`).
+    #[arg(long, default_value = "")]
+    pub prefix: String,
+}
+
 pub async fn dispatch(client: &runpod::Client, cmd: Command) -> Result<()> {
     match cmd {
         Command::List => list(client).await,
@@ -47,6 +66,7 @@ pub async fn dispatch(client: &runpod::Client, cmd: Command) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&v)?);
             Ok(())
         }
+        Command::Sync(args) => sync(client, args).await,
         Command::Create(args) => {
             let body = runpod::types::NetworkVolumeCreateInput {
                 name: args.name,
@@ -64,6 +84,100 @@ pub async fn dispatch(client: &runpod::Client, cmd: Command) -> Result<()> {
             Ok(())
         }
     }
+}
+
+// ─── S3-compatible volume access ────────────────────────────────────
+
+/// Build an S3 client pointed at the volume's data center endpoint
+/// (`https://s3api-<dc>.runpod.io`, path-style addressing). Credentials
+/// come from the standard AWS env vars (RunPod S3 API keys).
+async fn s3_for_volume(
+    client: &runpod::Client,
+    volume_id: &str,
+) -> Result<(aws_sdk_s3::Client, String)> {
+    let v = client.get_network_volume(volume_id).await?;
+    let dc = v
+        .data_center_id
+        .context("volume has no data_center_id; cannot derive its S3 endpoint")?;
+    let region = dc.to_lowercase(); // EU-RO-1 → eu-ro-1
+    let endpoint = format!("https://s3api-{region}.runpod.io");
+    let base = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_sdk_s3::config::Region::new(region.clone()))
+        .endpoint_url(&endpoint)
+        .load()
+        .await;
+    // RunPod's S3 gateway needs path-style addressing (bucket in the path,
+    // not a vhost subdomain).
+    let conf = aws_sdk_s3::config::Builder::from(&base)
+        .force_path_style(true)
+        .build();
+    Ok((aws_sdk_s3::Client::from_conf(conf), region))
+}
+
+/// Collect `(absolute_path, key_relative_to_root)` for every file under
+/// `cur`. A single file uploads under its own name; a directory uploads
+/// its contents (keys relative to the directory).
+fn collect_files(root: &Path, cur: &Path, out: &mut Vec<(PathBuf, String)>) -> Result<()> {
+    let meta = std::fs::metadata(cur).with_context(|| format!("stat {cur:?}"))?;
+    if meta.is_file() {
+        let rel = if root == cur {
+            cur.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .context("file has no name")?
+        } else {
+            cur.strip_prefix(root)
+                .unwrap_or(cur)
+                .to_string_lossy()
+                .replace('\\', "/")
+        };
+        out.push((cur.to_path_buf(), rel));
+        return Ok(());
+    }
+    let mut entries: Vec<PathBuf> =
+        std::fs::read_dir(cur)?.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    entries.sort(); // deterministic upload order
+    for p in entries {
+        collect_files(root, &p, out)?;
+    }
+    Ok(())
+}
+
+async fn sync(client: &runpod::Client, args: SyncArgs) -> Result<()> {
+    let (s3, region) = s3_for_volume(client, &args.id).await?;
+    let prefix = args.prefix.trim_matches('/').to_string();
+    let mut files = Vec::new();
+    collect_files(&args.local, &args.local, &mut files)?;
+    eprintln!(
+        "[runpod-cli] uploading {} file(s) → s3://{}/{} ({})",
+        files.len(),
+        args.id,
+        prefix,
+        region
+    );
+    let mut bytes_total: u64 = 0;
+    for (path, rel) in &files {
+        let key = if prefix.is_empty() { rel.clone() } else { format!("{prefix}/{rel}") };
+        let body = ByteStream::from_path(path)
+            .await
+            .with_context(|| format!("reading {path:?}"))?;
+        bytes_total += std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        s3.put_object()
+            .bucket(&args.id)
+            .key(&key)
+            .body(body)
+            .send()
+            .await
+            .with_context(|| format!("uploading {key}"))?;
+        eprintln!("  → {key}");
+    }
+    println!(
+        "uploaded {} file(s) ({:.1} MB) to volume {} (prefix {:?})",
+        files.len(),
+        bytes_total as f64 / 1.0e6,
+        args.id,
+        prefix
+    );
+    Ok(())
 }
 
 async fn create_from_spec(client: &runpod::Client, path: &std::path::Path) -> Result<()> {

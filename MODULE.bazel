@@ -69,5 +69,13 @@ crate.spec(package = "progenitor-client", version = "0.14")
 crate.spec(package = "ratatui", version = "0.29")
 crate.spec(package = "crossterm", version = "0.28")
 crate.spec(package = "async-trait", version = "0.1")
+# S3-compatible upload to RunPod network volumes — the fast data path that
+# replaces rsync-over-SSH for bulk training data.
+crate.spec(
+    features = ["behavior-version-latest"],
+    package = "aws-config",
+    version = "1",
+)
+crate.spec(package = "aws-sdk-s3", version = "1")
 crate.from_specs(name = "crates")
 use_repo(crate, "crates")
