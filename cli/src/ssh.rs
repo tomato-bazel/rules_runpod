@@ -278,6 +278,20 @@ fn run_capture(endpoint: &SshEndpoint, cmd_line: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Create `/root/workdir` on the pod. The rsync path creates it as a
+/// side effect of the upload; volume mode skips rsync, so without this
+/// the setup/run scripts' `cd /root/workdir` fails on a fresh pod.
+pub fn ensure_workdir(endpoint: &SshEndpoint) -> Result<()> {
+    let mut cmd = Command::new("ssh");
+    cmd.args(ssh_args(endpoint));
+    cmd.arg("mkdir -p /root/workdir");
+    let status = cmd.status().context("spawning ssh to create workdir")?;
+    if !status.success() {
+        bail!("remote mkdir /root/workdir exited with status {status}");
+    }
+    Ok(())
+}
+
 pub fn exec_remote(endpoint: &SshEndpoint, cmd_line: &str) -> Result<()> {
     let mut cmd = Command::new("ssh");
     cmd.args(ssh_args(endpoint));

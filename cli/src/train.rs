@@ -151,6 +151,9 @@ pub async fn cmd_train(
         ssh::rsync_up(&endpoint, &manifest.workdir, "/root/workdir/", &manifest.skip_patterns)?;
     } else {
         eprintln!("[runpod-cli] volume mode: skipping workdir rsync (inputs staged on the volume)");
+        // rsync would have created /root/workdir; volume mode skips it, so
+        // make the directory the setup/run scripts cd into.
+        ssh::ensure_workdir(&endpoint)?;
     }
 
     // Capture failures so we can still pull partial outputs + tear

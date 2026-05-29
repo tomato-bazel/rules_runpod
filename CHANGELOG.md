@@ -5,6 +5,14 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.9 — Create the workdir in volume mode
+
+- **`mkdir -p /root/workdir` before setup/run in volume mode.** The rsync
+  path creates `/root/workdir` as a side effect of the upload; volume mode
+  skips rsync, so on a fresh pod the setup/run scripts' `cd /root/workdir`
+  failed with "No such file or directory" — training never started.
+  `ssh::ensure_workdir` now creates it after the rsync-skip.
+
 ## 0.0.8 — S3 network-volume data path (rsync-free training)
 
 - **`volume sync` / `volume download`.** S3-compatible upload/download to a
