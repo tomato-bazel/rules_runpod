@@ -143,14 +143,28 @@ fn collect_files(root: &Path, cur: &Path, out: &mut Vec<(PathBuf, String)>) -> R
 }
 
 async fn sync(client: &runpod::Client, args: SyncArgs) -> Result<()> {
-    let (s3, region) = s3_for_volume(client, &args.id).await?;
-    let prefix = args.prefix.trim_matches('/').to_string();
+    let n = upload(client, &args.id, &args.local, &args.prefix).await?;
+    println!("uploaded {n} file(s) to volume {}", args.id);
+    Ok(())
+}
+
+/// Upload a local file or directory to `volume_id` under `prefix` via the
+/// S3 API. Shared by the `volume sync` subcommand and the train flow's
+/// pre-deploy dataset staging. Returns the number of files uploaded.
+pub(crate) async fn upload(
+    client: &runpod::Client,
+    volume_id: &str,
+    local: &Path,
+    prefix: &str,
+) -> Result<usize> {
+    let (s3, region) = s3_for_volume(client, volume_id).await?;
+    let prefix = prefix.trim_matches('/').to_string();
     let mut files = Vec::new();
-    collect_files(&args.local, &args.local, &mut files)?;
+    collect_files(local, local, &mut files)?;
     eprintln!(
         "[runpod-cli] uploading {} file(s) → s3://{}/{} ({})",
         files.len(),
-        args.id,
+        volume_id,
         prefix,
         region
     );
@@ -162,22 +176,15 @@ async fn sync(client: &runpod::Client, args: SyncArgs) -> Result<()> {
             .with_context(|| format!("reading {path:?}"))?;
         bytes_total += std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         s3.put_object()
-            .bucket(&args.id)
+            .bucket(volume_id)
             .key(&key)
             .body(body)
             .send()
             .await
             .with_context(|| format!("uploading {key}"))?;
-        eprintln!("  → {key}");
+        eprintln!("  → {key} ({:.1} MB)", bytes_total as f64 / 1.0e6);
     }
-    println!(
-        "uploaded {} file(s) ({:.1} MB) to volume {} (prefix {:?})",
-        files.len(),
-        bytes_total as f64 / 1.0e6,
-        args.id,
-        prefix
-    );
-    Ok(())
+    Ok(files.len())
 }
 
 async fn create_from_spec(client: &runpod::Client, path: &std::path::Path) -> Result<()> {

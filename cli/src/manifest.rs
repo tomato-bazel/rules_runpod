@@ -41,6 +41,13 @@ pub struct Manifest {
     pub outputs: Vec<String>,
     #[serde(default)]
     pub skip_patterns: Vec<String>,
+    /// Inputs to stage onto the mounted network volume via the S3 API
+    /// *before* deploy — the fast data path for bulk data (datasets,
+    /// model weights) that bypasses the SSH workdir rsync. Requires
+    /// `resources.network_volume_id`. The pod mounts the volume (default
+    /// `/workspace`), so a staged key `k` is readable at `/workspace/k`.
+    #[serde(default)]
+    pub stage: Vec<StageEntry>,
 
     pub resources: Resources,
     #[serde(default)]
@@ -65,6 +72,16 @@ pub struct Manifest {
 
     pub setup: String,
     pub run: String,
+}
+
+/// One input to stage onto a network volume before deploy.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StageEntry {
+    /// Local path (file or directory) to upload.
+    pub local: String,
+    /// Key prefix on the volume (e.g. `datasets/parser`).
+    #[serde(default)]
+    pub key: String,
 }
 
 fn default_poll_secs() -> u64 { 30 }
@@ -96,6 +113,11 @@ pub struct Resources {
     /// be mounted by pods in its own DC.
     #[serde(default)]
     pub data_center_id: Option<String>,
+    /// Deploy from a registered RunPod template id (image / ports / disk
+    /// / start command come from the template; `image` is then ignored).
+    /// The GPU type is still chosen per-deploy, so the fallback applies.
+    #[serde(default)]
+    pub template_id: Option<String>,
 }
 
 /// Accept a single string or a sequence of strings for `gpu_type`,

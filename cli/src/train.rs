@@ -70,6 +70,26 @@ pub async fn cmd_train(
         }
     }
 
+    // Stage bulk inputs (datasets, weights) onto the network volume via
+    // the S3 API before deploy — fast + parallel-capable, and bypasses
+    // both the slow SSH rsync and its `bazel-*` exclude (so genrule-built
+    // datasets reach the pod). The pod mounts the volume at deploy.
+    if !manifest.stage.is_empty() {
+        let vol = manifest
+            .resources
+            .network_volume_id
+            .clone()
+            .context("manifest has `stage` entries but no resources.network_volume_id")?;
+        for s in &manifest.stage {
+            let n =
+                crate::volume::upload(client, &vol, std::path::Path::new(&s.local), &s.key).await?;
+            eprintln!(
+                "[runpod-cli] staged {n} file(s) from {} → volume {vol}:{}",
+                s.local, s.key
+            );
+        }
+    }
+
     let pod = if args.reuse {
         let st = State::load_or_default()?;
         let pod_id = st
@@ -196,8 +216,15 @@ pub async fn cmd_train(
 /// opposed to a hard misconfiguration (bad GPU id, auth, quota). Only
 /// capacity errors are retried against the next candidate.
 fn is_capacity_error(err: &anyhow::Error) -> bool {
-    let m = err.to_string().to_lowercase();
-    m.contains("no instances currently available") || m.contains("no instances available")
+    // RunPod's create_pod returns only `{"error": "<free-text>", "status":
+    // 500}` for "no capacity / try a different machine" — no machine-readable
+    // code, and the message wording varies ("no instances currently
+    // available", "does not have the resources to deploy your pod"). The
+    // reliable discriminator is the HTTP status class: all of these are 5xx,
+    // while the errors we must NOT retry are structurally different — an
+    // invalid GPU id is a client-side parse error (no "HTTP" at all), and
+    // auth/bad-request are 4xx. So advance the GPU fallback on any 5xx.
+    err.to_string().contains("HTTP 5")
 }
 
 /// Provision a pod, trying each GPU candidate in order. Advances to the
@@ -226,6 +253,7 @@ async fn deploy_with_fallback(
             env: manifest.envs.clone(),
             network_volume_id: manifest.resources.network_volume_id.clone(),
             data_center_id: manifest.resources.data_center_id.clone(),
+            template_id: manifest.resources.template_id.clone(),
         };
         eprintln!(
             "[runpod-cli] deploying {} on {} ({}) [{}/{}]",

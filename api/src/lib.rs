@@ -316,7 +316,14 @@ impl Client {
             };
         let mut body = PodCreateInput {
             name,
-            image_name: Some(req.image.clone()),
+            // A template supplies the image; only set image_name for the
+            // raw-image path so the two don't conflict.
+            image_name: if req.template_id.is_some() {
+                None
+            } else {
+                Some(req.image.clone())
+            },
+            template_id: req.template_id.clone(),
             container_disk_in_gb: Some(req.container_disk_gb as i64),
             volume_in_gb: Some(req.volume_gb as i64),
             cloud_type,
@@ -367,10 +374,16 @@ impl Client {
         let mut last_status = String::new();
         loop {
             let pod = self.get_pod(pod_id).await?;
-            if pod.ssh_endpoint().is_some()
-                && matches!(pod.desired_status, Some(PodDesiredStatus::Running))
-            {
-                return Ok(pod);
+            // The API assigns the SSH endpoint *before* sshd is necessarily
+            // listening, so returning here would race rsync_up into a
+            // "connection refused". Only return once a TCP connect to the
+            // endpoint actually succeeds (sshd accepting).
+            if let Some(ep) = pod.ssh_endpoint() {
+                if matches!(pod.desired_status, Some(PodDesiredStatus::Running))
+                    && probe_ssh(&ep.host, ep.port)
+                {
+                    return Ok(pod);
+                }
             }
             let status = pod
                 .desired_status
@@ -389,6 +402,22 @@ impl Client {
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
+    }
+}
+
+/// Best-effort TCP probe of an SSH endpoint — true once sshd is accepting
+/// connections. RunPod publishes the endpoint before sshd is up, so this
+/// gates `wait_for_ssh` against the rsync "connection refused" race.
+fn probe_ssh(host: &str, port: u32) -> bool {
+    use std::net::ToSocketAddrs;
+    match (host, port as u16).to_socket_addrs() {
+        Ok(mut addrs) => addrs
+            .next()
+            .map(|a| {
+                std::net::TcpStream::connect_timeout(&a, Duration::from_secs(3)).is_ok()
+            })
+            .unwrap_or(false),
+        Err(_) => false,
     }
 }
 
@@ -460,6 +489,11 @@ pub struct DeployRequest {
     pub network_volume_id: Option<String>,
     /// Constrain placement to a single data center, e.g. "US-IL-1".
     pub data_center_id: Option<String>,
+    /// Deploy from a registered RunPod template (image / ports / disk /
+    /// start command come from the template). When set, `image` is
+    /// ignored. The GPU type is still chosen per-deploy (so the fallback
+    /// list applies).
+    pub template_id: Option<String>,
 }
 
 impl DeployRequest {
