@@ -5,6 +5,21 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
+## 0.0.8 — S3 network-volume data path (rsync-free training)
+
+- **`volume sync` / `volume download`.** S3-compatible upload/download to a
+  RunPod network volume (aws-sdk-s3); endpoint + region derived from the
+  volume's data center (`s3api-<dc>.runpod.io`, path-style). Credentials
+  from the standard AWS env vars (RunPod S3 API keys).
+- **Manifest `stage` + `output_archive`.** `train` stages declared inputs to
+  the mounted volume via S3 before deploy, and in volume mode pulls a single
+  tarred output archive back via S3 — **no workdir rsync either direction**.
+  This is the fast data path for datasets / weights, and it delivers
+  genrule-built datasets that the `bazel-*` rsync exclude used to drop.
+- **Pod-lifecycle fixes** (folded from the in-progress 0.0.8 work): broaden
+  the capacity matcher to any create-pod HTTP 5xx, `wait_for_ssh` TCP probe,
+  and `template_id` deploy.
+
 ## 0.0.7 — GPU fallback list + repeatable --gpu override
 
 - **`train` retries across an ordered GPU fallback list.** The manifest's
