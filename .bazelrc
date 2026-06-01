@@ -1,13 +1,4 @@
-common --enable_bzlmod
-
 # Premium tier first so private siblings resolve before falling
 # through to the public fastverk registry and BCR.
-common --registry=https://raw.githubusercontent.com/fastverk/bazel-registry-premium/main/
-common --registry=https://raw.githubusercontent.com/fastverk/bazel-registry/main/
-common --registry=https://bcr.bazel.build/
 
 common --experimental_isolated_extension_usages
-common --check_direct_dependencies=warning
-
-test --test_output=errors
-test --test_summary=terse
