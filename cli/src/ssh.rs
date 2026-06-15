@@ -79,12 +79,19 @@ pub fn rsync_up(endpoint: &SshEndpoint, local: &Path, remote: &str,
 pub fn rsync_down(endpoint: &SshEndpoint, remote: &str, local: &Path) -> Result<()> {
     ensure_remote_rsync(endpoint)?;
     eprintln!("[runpod-cli] rsync {remote} -> {}", local.display());
+    // Mirror the remote directory's *contents* into `local`, symmetric with
+    // rsync_up (which puts the trailing slash on its source `local`). The
+    // trailing slash on the remote is load-bearing: without it rsync copies the
+    // directory itself *under* `local`, nesting as `local/<basename>/…`. `local`
+    // is the final destination, so create it first.
+    std::fs::create_dir_all(local)
+        .with_context(|| format!("creating {}", local.display()))?;
     let args = vec![
         "-az".to_string(), "--progress".into(),
         "-e".into(),
         format!("ssh -p {} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR",
                 endpoint.port),
-        format!("{}@{}:{}", endpoint.user, endpoint.host, remote),
+        format!("{}@{}:{}/", endpoint.user, endpoint.host, remote),
         local.display().to_string(),
     ];
     run_local_owned("rsync", &args)
