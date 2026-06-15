@@ -5,7 +5,7 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published bazel-registry entries (when published; v0
 is premium / private).
 
-## 0.0.10 — `volume create` accepts HTTP 201
+## 0.0.10 — `volume create` HTTP 201 + `rsync_down` output-nesting fix
 
 - **`volume create` no longer errors on a successful create.** RunPod's
   `POST /networkvolumes` returns `201 Created` with the new volume in the
@@ -14,6 +14,13 @@ is premium / private).
   the volume *was* created, but the CLI errored before printing its id.
   `patch_spec.py` now mirrors the `200` response under `201` for
   `POST /networkvolumes`, so the client parses the created volume.
+- **`rsync_down` no longer nests pulled outputs.** It omitted the trailing
+  slash on its remote source that `rsync_up` has on its local source, so
+  `rsync host:outputs/adapter-x local/outputs/adapter-x` copied the directory
+  *under* the destination — `outputs/adapter-x/adapter-x/`. A real RunPod
+  training run pulled its adapter into the doubled path. Now mirrors the remote
+  directory's *contents* into `local` (trailing slash, symmetric with
+  `rsync_up`) and creates `local` first since it's the final destination.
 
 ## 0.0.9 — Create the workdir in volume mode
 
