@@ -3,7 +3,7 @@
 //!
 //! Example runpod.toml:
 //!
-//!     name = "prime-transformer"
+//!     name = "my-training-run"
 //!     workdir = "."
 //!     outputs = ["runs"]
 //!
@@ -15,8 +15,8 @@
 //!     cloud_type = "COMMUNITY"  # or "SECURE"
 //!
 //!     [envs]
-//!     WANDB_PROJECT = "prime-transformer"
-//!     TASK_CONFIG = "configs/next_prime_medium.yaml"
+//!     WANDB_PROJECT = "my-project"
+//!     TASK_CONFIG = "configs/medium.yaml"
 //!
 //!     setup = """
 //!     curl -fsSL -o /usr/local/bin/bazel ...
@@ -24,7 +24,7 @@
 //!     """
 //!
 //!     run = """
-//!     bazel run //prime_transformer:train -- ...
+//!     bazel run //model:train -- ...
 //!     """
 
 use anyhow::{Context, Result};

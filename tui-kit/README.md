@@ -8,8 +8,8 @@ list/get/create/delete operations.
 ## Status
 
 v0.1, ships with [runpod-tui](../tui). Designed to be extractable
-into its own repo (e.g. `fastverk/tui-kit`) with `git mv` + a
-fastverk-registry entry. The crate has no dependencies outside this
+into its own repo with `git mv` + a
+registry entry. The crate has no dependencies outside this
 workspace beyond `ratatui`, `crossterm`, `tokio`, `anyhow`, and
 `async-trait`.
 
@@ -100,8 +100,8 @@ they're stateless render helpers (with one stateful exception,
 When extraction makes sense (when a second consumer wants the same
 machinery):
 
-1. `git mv tools/runpod-cli/tui-kit /tmp/tui-kit && cd /tmp/tui-kit && git init`
-2. Add a `metadata.json` + `MODULE.bazel` to `fastverk/bazel-registry/modules/tui-kit/0.1.0/`
-3. Push the repo to `fastverk/tui-kit`
+1. `git mv tui-kit /tmp/tui-kit && cd /tmp/tui-kit && git init`
+2. Add a `metadata.json` + `MODULE.bazel` to the registry under `modules/tui-kit/0.1.0/`
+3. Push the repo
 4. In runpod-cli, replace the path dep with `tui-kit = "0.1"` and
    the Bazel target with the registry-supplied `@tui_kit//:tui-kit`

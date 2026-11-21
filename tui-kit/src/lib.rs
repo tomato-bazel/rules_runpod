@@ -52,8 +52,8 @@
 //!
 //! Currently shipped inline next to `runpod-tui` in the same
 //! workspace. The crate has no RunPod dependencies — moving it
-//! to its own repo (e.g. `fastverk/tui-kit`) is a `git mv` +
-//! adding it to the personal Bazel registry.
+//! to its own repo is a `git mv` +
+//! adding it to a Bazel registry.
 
 pub mod app;
 pub mod event;

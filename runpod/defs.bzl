@@ -191,10 +191,12 @@ def runpod_inference_endpoint(
       image: container image. Defaults to the latest vLLM
         OpenAI-compatible server.
       max_model_len: vLLM `--max-model-len` setting.
-      min_workers / max_workers / idle_timeout_seconds:
-        autoscaling knobs (see `runpod_serverless_endpoint`).
+      min_workers: minimum autoscaled workers (see `runpod_serverless_endpoint`).
+      max_workers: maximum autoscaled workers.
+      idle_timeout_seconds: seconds a worker idles before scale-down.
       data_center_ids: list of data centers to allow.
-      scaler_type / scaler_value: scaling policy.
+      scaler_type: scaling policy type (e.g. `QUEUE_DELAY`).
+      scaler_value: scaling policy threshold.
       env: extra env vars to merge in beyond MODEL_NAME +
         MAX_MODEL_LEN.
       container_disk_gb: disk per worker.

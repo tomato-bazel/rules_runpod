@@ -2,8 +2,21 @@
 
 All notable changes to rules_runpod. The format is loosely
 [Keep a Changelog](https://keepachangelog.com/) — version headers
-mirror the published bazel-registry entries (when published; v0
-is premium / private).
+mirror the published entries in the
+[tomato-bazel registry](https://github.com/tomato-bazel/bazel-registry).
+
+## 0.1.0 — public release
+
+- **Published publicly** at `tomato-bazel/rules_runpod`, with a README,
+  MIT LICENSE, CI and stardoc reference docs. The repo `.bazelrc` now
+  carries the registry lines, so a fresh clone resolves without any
+  personal `~/.bazelrc`.
+- **Detached-run pod files renamed** (behaviour change): the run script,
+  log, pid and exit sentinel in the pod workdir are now
+  `.runpod_run.{sh,log,pid,exit}`, and the poll protocol markers are
+  `RUNPOD_EXIT` / `RUNPOD_LINES` / `RUNPOD_TAIL`.
+  A detached run launched by 0.0.x cannot be polled by 0.1.0; let
+  in-flight runs finish (or re-attach with the old CLI) before upgrading.
 
 ## 0.0.11 — `rsync_down` output-nesting fix
 
@@ -67,12 +80,11 @@ The `run` script can now execute detached on the pod
 (`detached = true` in the manifest TOML). Instead of streaming
 the script over a single long-lived SSH session — which dies if
 the connection drops, taking the whole run with it — the script
-is written to `.agora_run.sh`, launched under `setsid`/`nohup`,
-and the CLI polls for an `.agora_run.exit` sentinel over fresh
+is written to a run script on the pod, launched under `setsid`/`nohup`,
+and the CLI polls for an exit-code sentinel over fresh
 SSH connections.
 
-Motivation: three consecutive ~1-hour LoRA training runs (agora
-parser fine-tune) died to mid-run `Connection reset by peer` /
+Motivation: three consecutive ~1-hour LoRA training runs died to mid-run `Connection reset by peer` /
 `Broken pipe`. The training itself was healthy each time (loss
 converging) — the SSH session was the failure point. Detached
 execution decouples the run's lifetime from the controlling
@@ -116,8 +128,8 @@ for each artifact. `rlocation $1` returns the absolute on-disk
 path inside the runfiles tree, which `realpath`-equivalent
 processing happily accepts.
 
-End-to-end smoke: `bazel run //training:parser_jobspec_runpod_job.run`
-in the `agora` repo now successfully invokes
+End-to-end smoke: `bazel run //training:<name>_runpod_job.run`
+in a downstream repo now successfully invokes
 `runpod-cli train --manifest <bazel-bin manifest path>`.
 
 ## 0.0.3 — `<name>.run` wrapper accepts a bazel-bin manifest path
@@ -156,8 +168,7 @@ emitted `<name>.jobspec.json` (via python3) and invokes
 
 ## 0.0.1 — initial lift + public macros
 
-Rust workspace lifted verbatim from
-`prime-transformer/tools/runpod-cli`:
+Rust workspace (lifted from an earlier standalone `runpod-cli`):
 
 * `api/` — bearer-token wrapper around the progenitor-generated
   `runpod_api` (top-level `openapi_rust_client` target consumes
@@ -167,7 +178,7 @@ Rust workspace lifted verbatim from
   `template`, `volume`).
 * `tui/` — ratatui-based interactive surface over the API.
 * `tui-kit/` — generic ratatui widget library; the base pattern
-  for any future fastverk TUI app.
+  for any future TUI app.
 
 Public Starlark surface (`@rules_runpod//runpod:defs.bzl`):
 
@@ -176,8 +187,8 @@ Public Starlark surface (`@rules_runpod//runpod:defs.bzl`):
 * `runpod_job` — bind manifest + pod_type + image into a typed
   job spec; emits `<name>.jobspec.json`. v0.0.2 adds the
   `bazel run :<name>` wrapper that invokes the CLI.
-* `runpod_pod` — declare a long-lived service pod (klad-embed,
-  Ollama, agora bidder); emits `<name>.podspec.json`.
+* `runpod_pod` — declare a long-lived service pod (embedding
+  server, Ollama, model server); emits `<name>.podspec.json`.
 
 Smoke at `examples/smoke/` exercises all three macros end-to-end:
 
@@ -187,7 +198,6 @@ emits two self-contained spec files with reproducible content.
 
 All 13 targets in `bazel build //...` green.
 
-Migration path for prime-transformer (next-turn commit there):
-delete `tools/runpod-cli/` and switch `bazel_dep(rules_runpod)`,
-re-targeting `runpod-{cli,tui}` consumers to
+Consumers of a standalone `runpod-cli` can switch to
+`bazel_dep(rules_runpod)`, re-targeting `runpod-{cli,tui}` to
 `@rules_runpod//:cli` and `@rules_runpod//:tui`.

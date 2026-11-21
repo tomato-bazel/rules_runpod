@@ -6,9 +6,10 @@ rust_binary(
     name = "runpod-tui",
     srcs = glob(["src/**/*.rs"]),
     edition = "2021",
+    proc_macro_deps = ["@crates//:async-trait"],
     deps = [
         "//api:runpod",
-        "//tui-kit:tui-kit",
+        "//tui-kit",
         "@crates//:anyhow",
         "@crates//:crossterm",
         "@crates//:directories",
@@ -17,5 +18,4 @@ rust_binary(
         "@crates//:serde",
         "@crates//:tokio",
     ],
-    proc_macro_deps = ["@crates//:async-trait"],
 )

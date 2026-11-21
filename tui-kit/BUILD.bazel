@@ -10,11 +10,11 @@ rust_library(
     name = "tui-kit",
     srcs = glob(["src/**/*.rs"]),
     edition = "2021",
+    proc_macro_deps = ["@crates//:async-trait"],
     deps = [
         "@crates//:anyhow",
         "@crates//:crossterm",
         "@crates//:ratatui",
         "@crates//:tokio",
     ],
-    proc_macro_deps = ["@crates//:async-trait"],
 )
