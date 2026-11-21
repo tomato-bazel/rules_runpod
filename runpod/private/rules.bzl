@@ -7,13 +7,15 @@ The shape mirrors `rules_lora`: build-time emits a typed JSON
 spec; execute-time is the `runpod-cli` consuming the spec.
 """
 
-load(":providers.bzl",
-     "RunpodJobInfo",
-     "RunpodManifestInfo",
-     "RunpodNetworkVolumeInfo",
-     "RunpodPodInfo",
-     "RunpodServerlessEndpointInfo",
-     "RunpodTemplateInfo")
+load(
+    ":providers.bzl",
+    "RunpodJobInfo",
+    "RunpodManifestInfo",
+    "RunpodNetworkVolumeInfo",
+    "RunpodPodInfo",
+    "RunpodServerlessEndpointInfo",
+    "RunpodTemplateInfo",
+)
 
 # ============================================================
 # runpod_manifest — validate + sha-pin a TOML manifest.
@@ -326,7 +328,8 @@ def _runpod_serverless_endpoint_impl(ctx):
     if not template_info.is_serverless:
         fail(
             "runpod_serverless_endpoint(name={!r}): referenced template {!r} ".format(
-                ctx.label.name, str(ctx.attr.template.label)
+                ctx.label.name,
+                str(ctx.attr.template.label),
             ) + "must have is_serverless = True",
         )
 
@@ -342,6 +345,7 @@ def _runpod_serverless_endpoint_impl(ctx):
     if ctx.attr.network_volume:
         vol_info = ctx.attr.network_volume[RunpodNetworkVolumeInfo]
         network_volume_name = vol_info.volume_name
+
         # The endpoint MUST run in the volume's data center; if the
         # author left data_center_ids empty, pin it to the volume's.
         if not ctx.attr.data_center_ids:

@@ -13,24 +13,30 @@ load(
 runpod_manifest(
     name = "smoke",
     src = "runpod-smoke.toml",
-    workdir = ".",
     outputs = ["out"],
+    workdir = ".",
 )
 
 runpod_job(
     name = "smoke_job",
-    manifest = ":smoke",
-    pod_type = "NVIDIA GeForce RTX 4090",
-    image = "runpod/pytorch:2.5.1-py3.11-cuda12.4.1-devel-ubuntu22.04",
     env = {"PYTHONUNBUFFERED": "1"},
-    secrets = ["RUNPOD_API_KEY"],
+    image = "runpod/pytorch:2.5.1-py3.11-cuda12.4.1-devel-ubuntu22.04",
+    manifest = ":smoke",
     max_minutes = 30,
+    pod_type = "NVIDIA GeForce RTX 4090",
+    secrets = ["RUNPOD_API_KEY"],
 )
 
 runpod_pod(
     name = "smoke_service",
     image = "runpod/pytorch:2.5.1-py3.11-cuda12.4.1-devel-ubuntu22.04",
     pod_type = "NVIDIA GeForce RTX 4090",
-    ports = [50063, 11434],
-    secrets = ["RUNPOD_API_KEY", "HF_TOKEN"],
+    ports = [
+        50063,
+        11434,
+    ],
+    secrets = [
+        "RUNPOD_API_KEY",
+        "HF_TOKEN",
+    ],
 )

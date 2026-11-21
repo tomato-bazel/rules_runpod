@@ -1,6 +1,6 @@
 [package]
 name = "runpod-cli"
-description = "CLI for RunPod GPU pods + the prime-transformer training flow."
+description = "CLI for RunPod GPU pods: lifecycle, manifest-driven training runs, templates, endpoints, volumes."
 version.workspace = true
 edition.workspace = true
 

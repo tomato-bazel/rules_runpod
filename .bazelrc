@@ -1,4 +1,10 @@
-# Premium tier first so private siblings resolve before falling
-# through to the public fastverk registry and BCR.
-
 common --experimental_isolated_extension_usages
+
+# `rules_openapi` (which generates the RunPod API client) is published to the
+# tomato-bazel registry, not the BCR. Without these lines a fresh clone cannot
+# resolve this module's own dependency graph.
+#
+# `--registry` ACCUMULATES rather than replaces, and FIRST MATCH WINS, so BCR
+# must be listed explicitly and must come second.
+common --registry=https://registry.tbzl.dev/
+common --registry=https://bcr.bazel.build/

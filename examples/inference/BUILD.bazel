@@ -17,8 +17,8 @@ package(default_visibility = ["//visibility:public"])
 # center (the macro pins it automatically).
 runpod_network_volume(
     name = "model_cache",
-    size_gb = 100,
     data_center_id = "US-CA-2",
+    size_gb = 100,
 )
 
 # A) The convenience form: one macro, vLLM-served LLM ready for an
@@ -29,12 +29,12 @@ runpod_network_volume(
 #    re-downloading (~minutes).
 runpod_inference_endpoint(
     name = "qwen_coder_32b",
-    model = "Qwen/Qwen2.5-Coder-32B-Instruct",
     gpu_type_ids = ["NVIDIA A100 80GB PCIe"],
-    max_model_len = 32768,
-    min_workers = 0,
-    max_workers = 2,
     idle_timeout_seconds = 30,
+    max_model_len = 32768,
+    max_workers = 2,
+    min_workers = 0,
+    model = "Qwen/Qwen2.5-Coder-32B-Instruct",
     network_volume = ":model_cache",
     readme = "Qwen 2.5 Coder 32B served via vLLM, OpenAI-compatible at /openai/v1/chat/completions",
 )
@@ -45,23 +45,23 @@ runpod_inference_endpoint(
 #    min_workers=1 sharing the same image+env).
 runpod_template(
     name = "llama_3_70b_template",
-    image = "runpod/worker-v1-vllm:v2.7.0stable-cuda12.1.0",
-    template_name = "llama-3-70b-template",
     container_disk_gb = 200,
     env = {
         "MODEL_NAME": "meta-llama/Llama-3.3-70B-Instruct",
         "MAX_MODEL_LEN": "8192",
     },
-    ports = ["8000/http"],
+    image = "runpod/worker-v1-vllm:v2.7.0stable-cuda12.1.0",
     is_serverless = True,
+    ports = ["8000/http"],
+    template_name = "llama-3-70b-template",
 )
 
 runpod_serverless_endpoint(
     name = "llama_3_70b_dev",
-    template = ":llama_3_70b_template",
-    gpu_type_ids = ["NVIDIA H100 80GB HBM3"],
-    min_workers = 0,
-    max_workers = 1,
-    idle_timeout_seconds = 60,
     flashboot = True,
+    gpu_type_ids = ["NVIDIA H100 80GB HBM3"],
+    idle_timeout_seconds = 60,
+    max_workers = 1,
+    min_workers = 0,
+    template = ":llama_3_70b_template",
 )

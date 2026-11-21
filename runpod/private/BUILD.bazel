@@ -1,6 +1,16 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
 package(default_visibility = ["//:__subpackages__"])
 
 exports_files([
     "providers.bzl",
     "rules.bzl",
 ])
+
+bzl_library(
+    name = "rules_bzl",
+    srcs = [
+        "providers.bzl",
+        "rules.bzl",
+    ],
+)

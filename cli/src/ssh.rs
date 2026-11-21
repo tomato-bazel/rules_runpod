@@ -144,10 +144,10 @@ pub fn run_remote_script_env(
 /// with [`poll_remote_until_done`].
 ///
 /// Pod-side layout (all under `/root/workdir/`):
-///   * `.agora_run.sh`   — the script body (envs + manifest `run`)
-///   * `.agora_run.log`  — combined stdout/stderr
-///   * `.agora_run.pid`  — backgrounded shell's PID
-///   * `.agora_run.exit` — written with the exit code on completion
+///   * `.runpod_run.sh`   — the script body (envs + manifest `run`)
+///   * `.runpod_run.log`  — combined stdout/stderr
+///   * `.runpod_run.pid`  — backgrounded shell's PID
+///   * `.runpod_run.exit` — written with the exit code on completion
 ///
 /// The `.exit` sentinel is the completion signal; its contents are
 /// the script's exit status. This is the fix for the SSH-drop
@@ -177,28 +177,28 @@ pub fn run_remote_script_detached(
         stdin.write_all(b"set -euo pipefail\ncd /root/workdir\n")?;
         // Reset any stale sentinels from a prior attempt.
         stdin.write_all(
-            b"rm -f .agora_run.exit .agora_run.pid .agora_run.log\n",
+            b"rm -f .runpod_run.exit .runpod_run.pid .runpod_run.log\n",
         )?;
-        // Heredoc the script body into .agora_run.sh. Use a quoted
+        // Heredoc the script body into .runpod_run.sh. Use a quoted
         // delimiter so the body is written verbatim (no expansion
         // at write time — the script runs later under its own bash).
-        stdin.write_all(b"cat > .agora_run.sh <<'AGORA_RUN_BODY_EOF'\n")?;
+        stdin.write_all(b"cat > .runpod_run.sh <<'RUNPOD_RUN_BODY_EOF'\n")?;
         stdin.write_all(b"set -euo pipefail\ncd /root/workdir\n")?;
         for (k, v) in envs {
             let escaped = v.replace('\'', "'\\''");
             writeln!(stdin, "export {k}='{escaped}'")?;
         }
         stdin.write_all(script.as_bytes())?;
-        stdin.write_all(b"\nAGORA_RUN_BODY_EOF\n")?;
+        stdin.write_all(b"\nRUNPOD_RUN_BODY_EOF\n")?;
         // Launch detached: run the body, capture its exit code into
         // the sentinel. `setsid` fully divorces it from any
         // controlling terminal so an SSH hang-up can't signal it.
         stdin.write_all(
-            b"setsid bash -c 'bash .agora_run.sh > .agora_run.log 2>&1; \
-              echo $? > .agora_run.exit' < /dev/null > /dev/null 2>&1 &\n",
+            b"setsid bash -c 'bash .runpod_run.sh > .runpod_run.log 2>&1; \
+              echo $? > .runpod_run.exit' < /dev/null > /dev/null 2>&1 &\n",
         )?;
-        stdin.write_all(b"echo $! > .agora_run.pid\n")?;
-        stdin.write_all(b"echo \"[pod] detached run launched, pid=$(cat .agora_run.pid)\"\n")?;
+        stdin.write_all(b"echo $! > .runpod_run.pid\n")?;
+        stdin.write_all(b"echo \"[pod] detached run launched, pid=$(cat .runpod_run.pid)\"\n")?;
     }
     let status = child.wait().context("waiting on ssh (detached launch)")?;
     if !status.success() {
@@ -207,7 +207,7 @@ pub fn run_remote_script_detached(
     Ok(())
 }
 
-/// Poll the pod until the detached run writes its `.agora_run.exit`
+/// Poll the pod until the detached run writes its `.runpod_run.exit`
 /// sentinel, reconnecting on each tick so an individual SSH drop is
 /// harmless. Streams new log lines between polls. Returns the
 /// script's exit code.
@@ -226,12 +226,12 @@ pub fn poll_remote_until_done(
             // and any log lines past what we've already shown.
             &format!(
                 "cd /root/workdir 2>/dev/null || exit 0; \
-                 EXIT=$(cat .agora_run.exit 2>/dev/null || echo ''); \
-                 LINES=$(wc -l < .agora_run.log 2>/dev/null || echo 0); \
-                 echo \"AGORA_EXIT=${{EXIT}}\"; \
-                 echo \"AGORA_LINES=${{LINES}}\"; \
-                 echo 'AGORA_TAIL<<<'; \
-                 tail -n +{} .agora_run.log 2>/dev/null | tail -n 40; \
+                 EXIT=$(cat .runpod_run.exit 2>/dev/null || echo ''); \
+                 LINES=$(wc -l < .runpod_run.log 2>/dev/null || echo 0); \
+                 echo \"RUNPOD_EXIT=${{EXIT}}\"; \
+                 echo \"RUNPOD_LINES=${{LINES}}\"; \
+                 echo 'RUNPOD_TAIL<<<'; \
+                 tail -n +{} .runpod_run.log 2>/dev/null | tail -n 40; \
                  echo '>>>'",
                 last_log_lines + 1,
             ),
@@ -241,16 +241,16 @@ pub fn poll_remote_until_done(
                 let mut exit_val: Option<i32> = None;
                 let mut in_tail = false;
                 for line in out.lines() {
-                    if let Some(rest) = line.strip_prefix("AGORA_EXIT=") {
+                    if let Some(rest) = line.strip_prefix("RUNPOD_EXIT=") {
                         let rest = rest.trim();
                         if !rest.is_empty() {
                             exit_val = rest.parse::<i32>().ok().or(Some(0));
                         }
-                    } else if let Some(rest) = line.strip_prefix("AGORA_LINES=") {
+                    } else if let Some(rest) = line.strip_prefix("RUNPOD_LINES=") {
                         if let Ok(n) = rest.trim().parse::<u64>() {
                             last_log_lines = n;
                         }
-                    } else if line == "AGORA_TAIL<<<" {
+                    } else if line == "RUNPOD_TAIL<<<" {
                         in_tail = true;
                     } else if line == ">>>" {
                         in_tail = false;

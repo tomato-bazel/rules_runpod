@@ -11,7 +11,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "MODULE.bazel",
-    "INTERNAL.md",
     "runpod-openapi.json",
 ])
 
@@ -33,12 +32,12 @@ genrule(
 # at //api:runpod which re-exports types and adds bearer auth.
 openapi_rust_client(
     name = "runpod_api",
-    spec = ":runpod_openapi_patched",
     progenitor_client = "@crates//:progenitor-client",
+    regress = "@crates//:regress",
     reqwest = "@crates//:reqwest",
     serde = "@crates//:serde",
     serde_json = "@crates//:serde_json",
-    regress = "@crates//:regress",
+    spec = ":runpod_openapi_patched",
 )
 
 # Convenience aliases so consumers can `bazel run @rules_runpod//:cli`
