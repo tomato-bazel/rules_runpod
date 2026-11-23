@@ -5,6 +5,19 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published entries in the
 [tomato-bazel registry](https://github.com/tomato-bazel/bazel-registry).
 
+## 0.1.1 — macros work from any calling repo
+
+- **`runpod_job`, `runpod_network_volume`, `runpod_template` and
+  `runpod_serverless_endpoint` (and so `runpod_inference_endpoint`) no longer
+  require the caller to see `@rules_runpod`.** Their generated `.run` /
+  `.create` targets named the CLI and launcher scripts with plain
+  `"@rules_runpod//..."` strings, which Bazel resolves in the *calling*
+  package. That broke any caller without a direct `bazel_dep` on
+  rules_runpod under that name: a module wrapping these macros (rules_lora's
+  `lora_train`, from a consumer that depends only on rules_lora), or a
+  `repo_name` alias. The labels are now `Label()` objects, and the
+  `$(rlocationpath ...)` args embed the canonical label.
+
 ## 0.1.0 — public release
 
 - **Published publicly** at `tomato-bazel/rules_runpod`, with a README,

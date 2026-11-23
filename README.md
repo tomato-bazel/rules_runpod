@@ -32,7 +32,7 @@ common --experimental_isolated_extension_usages
 Then in `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "rules_runpod", version = "0.1.0")
+bazel_dep(name = "rules_runpod", version = "0.1.1")
 ```
 
 ### Credentials
