@@ -23,6 +23,10 @@ Add it ahead of the BCR in your `.bazelrc`:
 ```
 common --registry=https://registry.tbzl.dev/
 common --registry=https://bcr.bazel.build/
+
+# rules_runpod declares an isolated crate universe (`use_extension(...,
+# isolate = True)`); Bazel rejects that without this flag.
+common --experimental_isolated_extension_usages
 ```
 
 Then in `MODULE.bazel`:
