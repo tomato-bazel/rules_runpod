@@ -5,6 +5,17 @@ All notable changes to rules_runpod. The format is loosely
 mirror the published entries in the
 [tomato-bazel registry](https://github.com/tomato-bazel/bazel-registry).
 
+## 0.1.1 — macros work when rules_runpod is a transitive dependency
+
+- The labels the macros (`runpod_job`, `runpod_network_volume`,
+  `runpod_template`, `runpod_serverless_endpoint`) put on the generated
+  `.run`/`.create`/`.deploy` targets were plain strings
+  (`"@rules_runpod//:cli"`, `"@rules_runpod//runpod:runner.sh"`, …). Those
+  resolve against the *calling* module's repo mapping, so a module that only
+  reached rules_runpod through another module (e.g. rules_lora's `lora_train`)
+  failed with "no repo visible as '@rules_runpod'". They are now `Label(...)`s,
+  and the `$(rlocationpath ...)` args use the canonical label string.
+
 ## 0.1.0 — public release
 
 - **Published publicly** at `tomato-bazel/rules_runpod`, with a README,

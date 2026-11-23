@@ -25,6 +25,12 @@ load(
     _runpod_template_rule = "runpod_template",
 )
 
+# Labels the macros below hand to targets in the CALLER's package. Wrapped in
+# Label() so they resolve against this module's repo mapping, not the
+# consumer's, which need not depend on rules_runpod by that name (or at all,
+# when rules_runpod arrives transitively through e.g. rules_lora).
+_CLI = Label("//:cli")
+
 runpod_manifest = _runpod_manifest
 runpod_pod = _runpod_pod
 
@@ -53,13 +59,13 @@ def runpod_network_volume(name, visibility = None, **kwargs):
     _runpod_network_volume_rule(name = name, visibility = visibility, **kwargs)
     sh_binary(
         name = name + ".create",
-        srcs = ["@rules_runpod//runpod:create_volume.sh"],
+        srcs = [Label("//runpod:create_volume.sh")],
         data = [
             ":" + name,
-            "@rules_runpod//:cli",
+            _CLI,
         ],
         args = [
-            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath %s)" % _CLI,
             "$(rlocationpath :" + name + ")",
         ],
         deps = ["@bazel_tools//tools/bash/runfiles"],
@@ -85,13 +91,13 @@ def runpod_template(name, visibility = None, **kwargs):
     _runpod_template_rule(name = name, visibility = visibility, **kwargs)
     sh_binary(
         name = name + ".create",
-        srcs = ["@rules_runpod//runpod:create_template.sh"],
+        srcs = [Label("//runpod:create_template.sh")],
         data = [
             ":" + name,
-            "@rules_runpod//:cli",
+            _CLI,
         ],
         args = [
-            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath %s)" % _CLI,
             "$(rlocationpath :" + name + ")",
         ],
         deps = ["@bazel_tools//tools/bash/runfiles"],
@@ -126,14 +132,14 @@ def runpod_serverless_endpoint(name, template, visibility = None, **kwargs):
     )
     sh_binary(
         name = name + ".deploy",
-        srcs = ["@rules_runpod//runpod:deploy_endpoint.sh"],
+        srcs = [Label("//runpod:deploy_endpoint.sh")],
         data = [
             template,
             ":" + name,
-            "@rules_runpod//:cli",
+            _CLI,
         ],
         args = [
-            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath %s)" % _CLI,
             "$(rlocationpath %s)" % template,
             "$(rlocationpath :" + name + ")",
         ],
@@ -312,17 +318,17 @@ def runpod_job(
         extra_args = ["--down-on-success", "--down-on-failure"]
     sh_binary(
         name = name + ".run",
-        srcs = ["@rules_runpod//runpod:runner.sh"],
+        srcs = [Label("//runpod:runner.sh")],
         # Bundle the manifest itself so the runner gets an absolute
         # runfiles path to the TOML — works for both source-tree and
         # bazel-bin manifests (e.g. synthesized by lora_train).
         data = [
             ":" + name,
             manifest,
-            "@rules_runpod//:cli",
+            _CLI,
         ],
         args = [
-            "$(rlocationpath @rules_runpod//:cli)",
+            "$(rlocationpath %s)" % _CLI,
             "$(rlocationpath :" + name + ")",
             "$(rlocationpath %s)" % manifest,
         ] + extra_args,
